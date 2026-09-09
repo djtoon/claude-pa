@@ -126,7 +126,7 @@ const HOOK_SESSION_START: &str = r#"bash "$CLAUDE_PROJECT_DIR/.claude/hooks/sess
 const HOOK_NOTIFY: &str = r#"bash "$CLAUDE_PROJECT_DIR/.claude/hooks/notify-phone.sh""#;
 // Always allowed: the folder itself, web lookups, and the Telegram reply/react/edit tools (the phone session is
 // hidden and must never wait on a prompt for its own replies).
-const PERMISSIONS: &[&str] = &["Read(./**)", "Edit(./**)", "Write(./**)", "Glob", "Grep", "WebSearch", "WebFetch", "mcp__plugin_telegram_telegram"];
+const PERMISSIONS: &[&str] = &["Read(./**)", "Edit(./**)", "Glob", "Grep", "WebSearch", "WebFetch", "mcp__plugin_telegram_telegram"];
 // Allowed as well in "allow" mode (documents intent; bypassPermissions covers them anyway).
 const CONNECTOR_SERVERS: &[&str] = &["mcp__claude_ai_Gmail", "mcp__claude_ai_Google_Calendar", "mcp__claude_ai_Google_Drive", "mcp__claude_ai_Slack", "mcp__claude_ai_Atlassian_Rovo", "mcp__atlassian"];
 // Never, in any mode (deny rules win over everything, including bypassPermissions).
@@ -456,6 +456,8 @@ fn merge_settings(existing: Option<String>, telegram_state_dir: &str, o: &Option
     let perms = perms.as_object_mut().ok_or("settings.permissions is not an object")?;
     let allow = perms.entry("allow").or_insert_with(|| json!([]));
     let allow = allow.as_array_mut().ok_or("settings.permissions.allow is not an array")?;
+    // Older installs wrote Write(./**); Claude Code warns that only Edit(...) rules cover file writes.
+    allow.retain(|v| v.as_str() != Some("Write(./**)") && v.as_str() != Some("Write(./.pa/**)"));
     let mut added = 0;
     for rule in PERMISSIONS {
         if !allow.iter().any(|v| v.as_str() == Some(rule)) {

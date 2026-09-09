@@ -1,6 +1,6 @@
 [package]
 name = "pa-installer"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 description = "Installs the pa-pack personal-assistant skills, agents, hooks and state into a project's .claude folder through a local web UI."
 license = "MIT"

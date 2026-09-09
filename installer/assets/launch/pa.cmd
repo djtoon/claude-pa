@@ -16,5 +16,10 @@ if not "%RUNNING%"=="0" (
 )
 rem Forget Claude's cached "recent failure" for the Telegram server so this session retries it.
 powershell -NoProfile -Command "$p=\"$env:USERPROFILE\.claude\mcp-needs-auth-cache.json\"; if (Test-Path $p) { try { $j = Get-Content $p -Raw | ConvertFrom-Json; if ($j.PSObject.Properties['plugin:telegram:telegram']) { $j.PSObject.Properties.Remove('plugin:telegram:telegram'); $j | ConvertTo-Json -Compress | Set-Content $p } } catch {} }" >nul 2>&1
+rem The permission mode chosen in the installer lives in .claude\settings.json. It is passed explicitly because
+rem -c (continue) would otherwise restore whatever mode the previous session ran in.
+set "MODEFLAG="
+findstr /C:"\"defaultMode\": \"bypassPermissions\"" ".claude\settings.json" >nul 2>&1 && set "MODEFLAG=--permission-mode bypassPermissions"
+findstr /C:"\"defaultMode\": \"acceptEdits\"" ".claude\settings.json" >nul 2>&1 && set "MODEFLAG=--permission-mode acceptEdits"
 rem -c continues your last conversation in this folder (a fresh one starts when there is none).
-"{{CLAUDE}}" -c --channels plugin:telegram@claude-plugins-official %*
+"{{CLAUDE}}" -c %MODEFLAG% --channels plugin:telegram@claude-plugins-official %*

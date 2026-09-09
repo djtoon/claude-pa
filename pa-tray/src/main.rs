@@ -131,6 +131,15 @@ fn phone_session_pids() -> Vec<u32> {
     }
 }
 
+/// The folder's chosen permission mode (.claude/settings.json → permissions.defaultMode). Passed explicitly on the
+/// command line because `-c` (continue) would otherwise restore whatever mode the previous session ran in.
+fn settings_permission_mode(root: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(root.join(".claude").join("settings.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let mode = v.get("permissions")?.get("defaultMode")?.as_str()?.to_string();
+    if ["bypassPermissions", "acceptEdits", "default", "plan"].contains(&mode.as_str()) { Some(mode) } else { None }
+}
+
 fn session_name(root: &Path) -> String {
     let base = root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     format!("pa-{}", base.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '-' }).collect::<String>())
@@ -347,10 +356,13 @@ impl Session {
             const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             let mut c = Command::new(&claude);
-            // -c continues the previous conversation (a fresh one starts when there is none). The permission mode
-            // comes from the folder's .claude/settings.json (permissions.defaultMode), set by the installer.
+            // -c continues the previous conversation (a fresh one starts when there is none). The permission mode is
+            // passed explicitly (from .claude/settings.json) because -c would otherwise restore the old session's mode.
             let _ = resume;
             c.args(["--channels", CHANNEL, "-c"]);
+            if let Some(mode) = settings_permission_mode(&self.root) {
+                c.args(["--permission-mode", &mode]);
+            }
             c.current_dir(&self.root).env_remove("CLAUDECODE").env("PATH", session_path());
             c.creation_flags(if visible { CREATE_NEW_CONSOLE } else { CREATE_NO_WINDOW });
             let child = c.spawn().map_err(|e| format!("cannot start claude: {e}"))?;
@@ -363,7 +375,8 @@ impl Session {
             let _ = visible;
             let name = session_name(&self.root);
             let _ = resume;
-            let cmd = format!("'{}' --channels {} -c", claude.to_string_lossy().replace('\'', "'\\''"), CHANNEL);
+            let mode_flag = settings_permission_mode(&self.root).map(|m| format!(" --permission-mode {m}")).unwrap_or_default();
+            let cmd = format!("'{}' --channels {} -c{}", claude.to_string_lossy().replace('\'', "'\\''"), CHANNEL, mode_flag);
             let st = Command::new("tmux")
                 .args(["new-session", "-d", "-s", &name, "-c", &self.root.to_string_lossy(), &cmd])
                 .env_remove("CLAUDECODE")

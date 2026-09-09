@@ -14,8 +14,12 @@ if [ -f "$F" ]; then
   fi
 fi
 SESSION=pa
-# The permission mode comes from the folder's .claude/settings.json (set by the installer's Permissions step).
-CMD="cd '$ROOT' && claude -c --channels plugin:telegram@claude-plugins-official"
+# The permission mode chosen in the installer lives in .claude/settings.json. It is passed explicitly because
+# -c (continue) would otherwise restore whatever mode the previous session ran in.
+MODEFLAG=""
+grep -q '"defaultMode": "bypassPermissions"' "$ROOT/.claude/settings.json" 2>/dev/null && MODEFLAG="--permission-mode bypassPermissions"
+grep -q '"defaultMode": "acceptEdits"' "$ROOT/.claude/settings.json" 2>/dev/null && MODEFLAG="--permission-mode acceptEdits"
+CMD="cd '$ROOT' && claude -c $MODEFLAG --channels plugin:telegram@claude-plugins-official"
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     # Git Bash rewrites bare /flags into paths, so keep cmd's arguments out of bash: everything lives in pa-up.cmd.
