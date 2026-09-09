@@ -1,0 +1,90 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: .exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            ext: ""
+          - os: macos-13
+            target: x86_64-apple-darwin
+            ext: ""
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            pa-tray
+            installer
+
+      - name: Linux build deps (tray icon needs GTK + appindicator)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+
+      - name: Build pa-tray
+        run: cargo build --release --target ${{ matrix.target }} --manifest-path pa-tray/Cargo.toml
+
+      - name: Build pa-installer (embeds pa-tray)
+        env:
+          PA_TRAY_BIN: ${{ github.workspace }}/pa-tray/target/${{ matrix.target }}/release/pa-tray${{ matrix.ext }}
+        run: cargo build --release --target ${{ matrix.target }} --manifest-path installer/Cargo.toml
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          installer/target/${{ matrix.target }}/release/pa-installer${{ matrix.ext }} list
+          installer/target/${{ matrix.target }}/release/pa-installer${{ matrix.ext }} install "${RUNNER_TEMP}/pa-smoke" --dry-run --no-provision | tail -3
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "installer/target/${{ matrix.target }}/release/pa-installer${{ matrix.ext }}" "dist/pa-installer-${{ matrix.target }}${{ matrix.ext }}"
+          cp "pa-tray/target/${{ matrix.target }}/release/pa-tray${{ matrix.ext }}" "dist/pa-tray-${{ matrix.target }}${{ matrix.ext }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pa-installer-${{ matrix.target }}
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

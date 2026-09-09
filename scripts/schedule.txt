@@ -1,0 +1,6 @@
+# Proactive schedule (local time). Minutes chosen off :00/:30 on purpose.
+# name        cron                    skill
+morning       35 7 * * 0-5            morning-brief
+radar         7 9-19/2 * * 0-5        radar
+eod           35 18 * * 0-5           end-of-day
+week-ahead    5 8 * * 0               morning-brief the week ahead: next 7 days, key meetings, deadlines, prep needed

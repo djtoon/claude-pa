@@ -1,0 +1,841 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pa-pack installer</title>
+<style>
+  :root {
+    --bg: #000000; --bg2: #0a0a0a; --panel: #050505;
+    --fg: #f4f1ec; --muted: #9a9a9a; --dim: #5c5c5c;
+    --or: #ff8b3d; --or2: #d97757; --or3: #ffb27a; --or-dim: #7a4322;
+    --err: #ff5c5c; --ok: #f4f1ec;
+    --line: #3a2a1f; --line2: #6b3f24;
+    --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "Fira Code", Menlo, Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.55 var(--mono); }
+  ::selection { background: var(--or); color: #000; }
+  /* scanlines + vignette */
+  body::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, transparent 1px 3px); }
+  body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0,0,0,.6) 100%); }
+  .wrap { position: relative; z-index: 1; max-width: 1000px; margin: 0 auto; padding: 22px 18px 70px; }
+  a { color: var(--or); text-decoration: none; } a:hover { text-decoration: underline; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-track { background: #000; } ::-webkit-scrollbar-thumb { background: var(--or-dim); border: 2px solid #000; }
+
+  /* ---- header: Claude Code style welcome box ---- */
+  .hello { border: 1px solid var(--or); border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; position: relative; background: var(--panel); }
+  .hello .spark { color: var(--or); }
+  .hello .t { color: var(--fg); font-weight: 700; }
+  .hello .s { color: var(--muted); }
+  .hello .ver { color: var(--dim); }
+  .banner-art { color: var(--or); font-size: 10px; line-height: 1.05; white-space: pre; margin: 10px 0 4px; letter-spacing: 0; overflow-x: auto; }
+  @media (max-width: 720px) { .banner-art { display: none; } }
+  .cursor::after { content: "▌"; color: var(--or); animation: blink 1s steps(1) infinite; margin-left: 2px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---- step bar ---- */
+  .steps { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 18px; padding: 8px 12px; border-top: 1px dashed var(--line2); border-bottom: 1px dashed var(--line2); color: var(--dim); text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
+  .steps div { cursor: default; }
+  .steps div b { font-weight: 400; color: var(--dim); }
+  .steps div.active { color: #000; background: var(--or); padding: 0 6px; }
+  .steps div.active b { color: #000; }
+  .steps div.done { color: var(--or3); } .steps div.done b { color: var(--or3); }
+
+  section.step { display: none; animation: fade .18s ease; }
+  section.step.active { display: block; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  h2 { font-size: 18px; margin: 0 0 4px; color: var(--fg); font-weight: 700; }
+  h2::before { content: "> "; color: var(--or); }
+  .lead { color: var(--muted); margin: 0 0 16px; }
+  .mono { font-family: var(--mono); }
+  .hi { color: var(--or); }
+
+  /* ---- boxes ---- */
+  .card { position: relative; border: 1px solid var(--line2); border-radius: 6px; padding: 16px 16px 14px; background: var(--panel); }
+  .card + .card { margin-top: 12px; }
+  .card h3 { position: absolute; top: -9px; left: 12px; margin: 0; padding: 0 6px; background: var(--bg); color: var(--or); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .card h3::before { content: "── "; color: var(--line2); } .card h3::after { content: " ──"; color: var(--line2); }
+  .grid { display: grid; gap: 10px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); } .g3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 720px) { .g2, .g3 { grid-template-columns: 1fr; } }
+
+  /* ---- persona cards ---- */
+  .persona { cursor: pointer; padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg2); position: relative; transition: border-color .1s, background .1s; }
+  .persona:hover { border-color: var(--or2); }
+  .persona.sel { border-color: var(--or); background: #120b06; box-shadow: inset 0 0 0 1px var(--or); }
+  .persona .em { font-size: 20px; }
+  .persona .nm { font-weight: 700; margin-top: 4px; color: var(--fg); }
+  .persona.sel .nm { color: var(--or); }
+  .persona .tg { color: var(--muted); font-size: 12.5px; }
+  .persona .ds { color: var(--dim); font-size: 12px; margin-top: 6px; line-height: 1.45; }
+  .persona .check { position: absolute; top: 10px; right: 12px; color: var(--dim); }
+  .persona .check::before { content: "[ ]"; }
+  .persona.sel .check { color: var(--or); } .persona.sel .check::before { content: "[x]"; }
+
+  /* ---- inputs ---- */
+  label.f { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  label.f::before { content: "$ "; color: var(--or-dim); }
+  input[type=text], input[type=password], input[type=time], textarea, select {
+    width: 100%; background: #000; border: 1px solid var(--line2); color: var(--fg); border-radius: 3px; padding: 8px 10px; font: inherit; outline: none; caret-color: var(--or); }
+  input::placeholder, textarea::placeholder { color: var(--dim); }
+  input:focus, textarea:focus { border-color: var(--or); box-shadow: 0 0 0 1px var(--or), 0 0 12px rgba(255,139,61,.25); }
+  input[type=time]::-webkit-calendar-picker-indicator { filter: invert(1) sepia(1) saturate(4) hue-rotate(-20deg); }
+  input[type=checkbox] { accent-color: var(--or); }
+  textarea { min-height: 96px; resize: vertical; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  /* ---- buttons: [ label ] ---- */
+  .btn { cursor: pointer; border: 1px solid var(--or2); background: #000; color: var(--or3); padding: 7px 12px; border-radius: 3px; font: inherit; font-weight: 700; letter-spacing: .02em; transition: background .08s, color .08s; }
+  .btn::before { content: "[ "; color: var(--or-dim); } .btn::after { content: " ]"; color: var(--or-dim); }
+  .btn:hover { background: var(--or); color: #000; } .btn:hover::before, .btn:hover::after { color: #000; }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--or); color: #000; border-color: var(--or); }
+  .btn.primary::before, .btn.primary::after { color: #000; }
+  .btn.primary:hover { background: var(--or3); }
+  .btn.ghost { border-color: var(--line); color: var(--muted); } .btn.ghost::before, .btn.ghost::after { color: var(--dim); }
+  .btn.ghost:hover { background: #1a1a1a; color: var(--fg); }
+  .btn.small { padding: 4px 8px; font-size: 12px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn:disabled:hover { background: #000; color: var(--or3); }
+  a.btn { display: inline-block; }
+  .nav { display: flex; justify-content: space-between; margin-top: 18px; gap: 10px; }
+
+  /* ---- chips: [Sun] ---- */
+  .chip { cursor: pointer; padding: 3px 8px; border: 1px solid var(--line); border-radius: 3px; background: #000; font-size: 12.5px; user-select: none; color: var(--muted); }
+  .chip.on { background: var(--or); border-color: var(--or); color: #000; font-weight: 700; }
+  .chip.quick:hover { color: var(--or3); border-color: var(--or2); }
+
+  /* ---- folder browser ---- */
+  .browser { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .crumbs { display: flex; gap: 2px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); align-items: center; }
+  .crumbs span { cursor: pointer; padding: 1px 5px; } .crumbs span:hover { background: var(--or); color: #000; }
+  .crumbs i { color: var(--or-dim); font-style: normal; }
+  .dirs { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 3px; background: #000; }
+  .dirs div { padding: 5px 12px; cursor: pointer; display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--fg); }
+  .dirs div::before { content: "  "; }
+  .dirs div:hover { background: var(--or); color: #000; }
+  .dirs div.hidden { color: var(--dim); }
+  .dirs .empty { color: var(--dim); cursor: default; } .dirs .empty:hover { background: none; color: var(--dim); }
+  .status { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .tag { font-size: 12px; padding: 1px 7px; border: 1px solid var(--line); color: var(--muted); border-radius: 2px; }
+  .tag.ok { color: var(--fg); border-color: var(--or-dim); } .tag.warn { color: var(--or); border-color: var(--or2); }
+  .tag.info { color: var(--or3); border-color: var(--or-dim); } .tag.err { color: var(--err); border-color: var(--err); }
+
+  /* ---- skills ---- */
+  .skill { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 3px; background: #000; cursor: pointer; }
+  .skill:hover { border-color: var(--or2); }
+  .skill input { margin-top: 4px; }
+  .skill .n { font-weight: 700; color: var(--or3); font-size: 13px; } .skill .d { color: var(--muted); font-size: 12px; line-height: 1.45; }
+  .skill.locked { cursor: default; } .skill.locked .n { color: var(--or); }
+
+  /* ---- toggles: [ ON ] / [OFF] ---- */
+  .toggle { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .toggle:last-child { border-bottom: none; }
+  .toggle .t { font-weight: 700; color: var(--fg); } .toggle .s { color: var(--muted); font-size: 12px; }
+  .tgl { cursor: pointer; flex: none; font-weight: 700; padding: 2px 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); background: #000; user-select: none; min-width: 64px; text-align: center; }
+  .tgl.on { color: #000; background: var(--or); border-color: var(--or); }
+
+  /* ---- plan list ---- */
+  .plan { font-size: 12.5px; border: 1px solid var(--line); border-radius: 3px; background: #000; max-height: 380px; overflow: auto; }
+  .plan div { display: grid; grid-template-columns: 76px 1fr; gap: 10px; padding: 3px 10px; align-items: baseline; }
+  .plan div:hover { background: #0f0a07; }
+  .plan .n { color: var(--dim); font-size: 11.5px; margin-left: 8px; }
+  .badge { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; text-align: center; font-weight: 700; }
+  .badge::before { content: "["; color: var(--dim); } .badge::after { content: "]"; color: var(--dim); }
+  .b-create { color: var(--fg); } .b-update { color: var(--or3); } .b-merge { color: var(--or3); } .b-append { color: var(--or3); }
+  .b-same { color: var(--dim); } .b-skip { color: var(--or); } .b-mkdir { color: var(--muted); }
+  .b-error { color: var(--err); } .b-ok { color: var(--or); } .b-todo { color: var(--or3); }
+  .counts { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+
+  /* ---- banners ---- */
+  .banner { padding: 8px 12px; border-left: 3px solid var(--or); background: #120b06; color: var(--or3); font-size: 13px; margin-bottom: 12px; }
+  .banner.err { border-left-color: var(--err); color: #ffb3b3; background: #140505; }
+  .banner.info { border-left-color: var(--or-dim); color: var(--muted); background: #0a0a0a; }
+  .banner.ok { border-left-color: var(--or); color: var(--fg); background: #0a0a0a; }
+
+  /* ---- command rows + output ---- */
+  .cmd { display: flex; align-items: center; gap: 10px; background: #000; border: 1px solid var(--line); border-radius: 3px; padding: 7px 10px; font-size: 13px; margin: 5px 0; }
+  .cmd code { flex: 1; white-space: pre-wrap; word-break: break-all; color: var(--fg); }
+  .cmd code::before { content: "$ "; color: var(--or); }
+  .cmd .k { color: var(--dim); font-size: 12px; min-width: 150px; }
+  .out { font-size: 12.5px; white-space: pre-wrap; background: #000; border: 1px solid var(--line2); border-radius: 3px; padding: 10px 12px; max-height: 320px; overflow: auto; margin-top: 10px; color: var(--fg); }
+  .out::before { content: "──── output ────\A"; color: var(--or-dim); white-space: pre; }
+
+  /* ---- done ---- */
+  .done-hero { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+  .done-hero .big { font-size: 28px; color: var(--or); }
+  .spinner { display: inline-block; width: 1ch; color: var(--or); animation: spin 1s steps(4) infinite; font-weight: 700; }
+  .spinner::before { content: "|"; }
+  @keyframes spin { 0% { transform: none; } 25% { transform: rotate(90deg); } 50% { transform: rotate(180deg); } 75% { transform: rotate(270deg); } }
+  .muted { color: var(--muted); } .dim { color: var(--dim); } .small { font-size: 12px; }
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #000; border: 1px solid var(--or); color: var(--or3); padding: 8px 14px; border-radius: 3px; font-size: 13px; opacity: 0; transition: opacity .15s; pointer-events: none; z-index: 9; }
+  .toast::before { content: "✻ "; color: var(--or); }
+  .toast.show { opacity: 1; }
+  .board { display: grid; gap: 4px; }
+  .srow { display: grid; grid-template-columns: 62px 1fr auto; gap: 12px; align-items: center; padding: 7px 10px; border: 1px solid var(--line); border-radius: 3px; background: #000; }
+  .srow .ic { font-weight: 700; font-size: 12px; letter-spacing: .04em; }
+  .srow.ok .ic { color: var(--or); } .srow.bad .ic { color: var(--or); background: #1a0e06; } .srow.err .ic { color: var(--err); } .srow.info .ic { color: var(--muted); }
+  .srow.ok { border-color: var(--line); } .srow.bad { border-color: var(--or2); } .srow.err { border-color: var(--err); }
+  .srow .t { font-weight: 700; color: var(--fg); } .srow .s { color: var(--muted); font-size: 12px; }
+  .svc { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .svc span { font-size: 12px; padding: 2px 8px; border: 1px solid var(--line); color: var(--muted); border-radius: 2px; }
+  .svc span.connected { color: var(--fg); border-color: var(--or-dim); }
+  .svc span.connected::before { content: "● "; color: var(--or); }
+  .svc span.needs_auth { color: var(--or); border-color: var(--or2); } .svc span.needs_auth::before { content: "○ "; }
+  .svc span.failed { color: var(--err); border-color: var(--err); } .svc span.failed::before { content: "✗ "; }
+  .svc span.other { opacity: .45; }
+  .tgbox { border: 1px dashed var(--line2); border-radius: 3px; padding: 10px 12px; margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--muted); } details summary::marker { color: var(--or); }
+  details.adv { margin-top: 14px; border: 1px dashed var(--line2); border-radius: 6px; padding: 8px 12px; }
+  details.adv > summary { color: var(--or3); font-weight: 700; }
+  details.adv[open] > summary { margin-bottom: 4px; }
+  footer { margin-top: 30px; color: var(--dim); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hello">
+    <div><span class="spark">✻</span> <span class="t">Welcome to pa-pack!</span> <span class="ver" id="ver">v</span></div>
+    <div class="s">&nbsp;&nbsp;A personal assistant for Claude Code, installed into one folder. Nothing global.</div>
+    <div class="banner-art">██████╗  █████╗       ██████╗  █████╗  ██████╗██╗  ██╗
+██╔══██╗██╔══██╗      ██╔══██╗██╔══██╗██╔════╝██║ ██╔╝
+██████╔╝███████║█████╗██████╔╝███████║██║     █████╔╝
+██╔═══╝ ██╔══██║╚════╝██╔═══╝ ██╔══██║██║     ██╔═██╗
+██║     ██║  ██║      ██║     ██║  ██║╚██████╗██║  ██╗
+╚═╝     ╚═╝  ╚═╝      ╚═╝     ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝</div>
+    <div class="s cursor">&nbsp;&nbsp;/install</div>
+  </div>
+
+  <div class="steps" id="steps">
+    <div data-i="0"><b>[1]</b> Persona</div>
+    <div data-i="1"><b>[2]</b> Folder</div>
+    <div data-i="2"><b>[3]</b> Setup</div>
+    <div data-i="3"><b>[4]</b> Review</div>
+    <div data-i="4"><b>[5]</b> Done</div>
+  </div>
+
+  <div id="noToken" class="banner err" hidden>This page was opened without its session token. Use the exact URL the installer printed in the terminal.</div>
+
+  <!-- 1 PERSONA -->
+  <section class="step active" data-step="0">
+    <h2>Pick a personality</h2>
+    <p class="lead">How it talks to you. The rules (confirm before sending, phone-sized replies, follow-ups) are the same for all of them; this is tone. It becomes the identity paragraph in <span class="hi">CLAUDE.md</span> and a few lines in <span class="hi">.pa/preferences.md</span>. You can rewrite both later.</p>
+    <div class="grid g3" id="personas"></div>
+    <div class="card" id="customBox" style="margin-top:14px" hidden>
+      <h3>Custom identity</h3>
+      <textarea id="personaCustom" placeholder="You are {{NAME}}, ... how it talks, what it cares about, what it never does."></textarea>
+      <div class="small dim" style="margin-top:6px">{{NAME}} is replaced with the assistant name below.</div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3>Names</h3>
+      <div class="grid g2">
+        <div>
+          <label class="f">Assistant name</label>
+          <input type="text" id="assistantName" value="Pa" placeholder="Pa">
+        </div>
+        <div>
+          <label class="f">Your name (email sign-off)</label>
+          <input type="text" id="signoff" placeholder="e.g. Dan">
+        </div>
+      </div>
+    </div>
+    <div class="nav"><span></span><button class="btn primary" onclick="go(1)">Choose a folder →</button></div>
+  </section>
+
+  <!-- 2 FOLDER -->
+  <section class="step" data-step="1">
+    <h2>Where should it live?</h2>
+    <p class="lead">Pick the project folder. The installer writes <span class="hi">.claude/</span> (skills, agents, hooks, settings), <span class="hi">.pa/</span> (state, scripts, Telegram state), <span class="hi">CLAUDE.md</span>, <span class="hi">.mcp.json</span> and the <span class="hi">pa</span> launchers inside it. Your global <span class="hi">~/.claude</span> is untouched, except one line that marks this folder trusted.</p>
+    <div class="card">
+      <h3>Target</h3>
+      <label class="f">Target folder</label>
+      <div class="row">
+        <input type="text" id="target" style="flex:1" placeholder="C:\\assistant  or  /home/me/assistant">
+        <button class="btn" onclick="browseTo(targetEl.value)">Browse here</button>
+      </div>
+      <div class="row" style="margin-top:8px" id="quick"></div>
+      <div class="status" id="targetStatus"></div>
+    </div>
+    <div class="card browser">
+      <h3>Browse</h3>
+      <div class="row" style="justify-content:space-between">
+        <div class="crumbs" id="crumbs"></div>
+        <div class="row">
+          <button class="btn small" onclick="upDir()">↑ up</button>
+          <button class="btn small" onclick="newFolderUI()">+ new folder</button>
+        </div>
+      </div>
+      <div class="row" id="newFolderRow" hidden>
+        <input type="text" id="newFolderName" placeholder="folder name" style="flex:1">
+        <button class="btn small primary" onclick="newFolderCreate()">create</button>
+        <button class="btn small ghost" onclick="newFolderRow.hidden=true">cancel</button>
+      </div>
+      <div class="dirs" id="dirs"></div>
+      <div class="small dim">Click a folder to open it. The path field above is what gets installed to.</div>
+    </div>
+    <div class="nav"><button class="btn ghost" onclick="go(0)">← back</button><button class="btn primary" id="toSetup" onclick="go(2)">Set it up →</button></div>
+  </section>
+
+  <!-- 3 SETUP -->
+  <section class="step" data-step="2">
+    <h2>Phone (optional)</h2>
+    <p class="lead">Chat with the assistant from Telegram and get the morning brief on your phone. Skip it if you want; you can come back later.</p>
+    <div id="envBanner"></div>
+    <div class="card">
+      <h3>Phone: Telegram</h3>
+      <div class="small muted" style="margin-bottom:10px">1. In Telegram, open <span class="hi">@BotFather</span>, send <span class="hi">/newbot</span>, copy the token. &nbsp; 2. Paste it here and verify. &nbsp; 3. Send your new bot any message; the wizard notices and allowlists you. No pairing codes.</div>
+      <div class="row">
+        <div style="flex:1; min-width: 260px"><label class="f">Bot token</label><input type="password" id="tgToken" placeholder="123456789:AAH..." autocomplete="off"></div>
+        <div style="align-self:flex-end"><button class="btn" id="tgVerify" onclick="tgVerify()">Verify token</button></div>
+      </div>
+      <div class="tgbox" id="tgBox" hidden>
+        <div id="tgBotLine"></div>
+        <div class="row" style="margin-top:10px">
+          <a class="btn" id="tgOpen" target="_blank" rel="noopener">Open the bot in Telegram ↗</a>
+          <button class="btn" id="tgDetect" onclick="tgDetect()">I sent it a message → detect me</button>
+        </div>
+        <div id="tgUserLine" style="margin-top:8px"></div>
+      </div>
+      <div class="grid g2" style="margin-top:10px" id="tgIds" hidden>
+        <div><label class="f">Chat id for pushes</label><input type="text" id="tgChat" placeholder="detected automatically"></div>
+        <div><label class="f">Allowlisted user id</label><input type="text" id="tgUser" placeholder="detected automatically"></div>
+      </div>
+    </div>
+
+    <details class="adv">
+      <summary>Advanced: your day, skills, wiring, automation (defaults are fine)</summary>
+    <div class="card" style="margin-top:12px">
+      <h3>Your day</h3>
+      <div class="grid g3">
+        <div><label class="f">Timezone</label><input type="text" id="tz"></div>
+        <div><label class="f">Day starts</label><input type="time" id="hStart" value="09:00"></div>
+        <div><label class="f">Day ends</label><input type="time" id="hEnd" value="18:30"></div>
+      </div>
+      <label class="f" style="margin-top:12px">Workdays (scheduled jobs run on these days)</label>
+      <div class="row" id="days"></div>
+    </div>
+
+    <div class="card">
+      <h3>Done for you after the files are written</h3>
+      <div id="autoToggles"></div>
+    </div>
+
+    <div class="card">
+      <h3>Skills</h3>
+      <div class="grid g2" id="skills"></div>
+    </div>
+    <div class="card">
+      <h3>Wiring</h3>
+      <div id="toggles"></div>
+    </div>
+        </details>
+    <div class="nav"><button class="btn ghost" onclick="go(1)">← back</button><span class="row"><button class="btn ghost" onclick="skipPhone()">Skip phone →</button><button class="btn primary" onclick="review()">Continue →</button></span></div>
+  </section>
+
+  <!-- 4 REVIEW -->
+  <section class="step" data-step="3">
+    <h2>Ready to install</h2>
+    <p class="lead">Nothing has been written yet. Here is what will happen in <span class="hi" id="reviewTarget"></span>.</p>
+    <div id="reviewBanner"></div>
+    <div class="card"><h3>Summary</h3><div id="reviewSummary" class="muted">planning…</div></div>
+    <details class="adv"><summary>Show every file and step</summary>
+    <div class="counts" id="reviewCounts"></div>
+    <div class="plan" id="plan"></div>
+    </details>
+    <div class="nav"><button class="btn ghost" onclick="go(2)">← back</button><button class="btn primary" id="installBtn" onclick="doInstall()">Install</button></div>
+  </section>
+
+  <!-- 5 DONE -->
+  <section class="step" data-step="4">
+    <div class="done-hero"><div class="big" id="doneEmoji">✻</div><div><h2 id="doneTitle">Installed</h2><p class="lead" style="margin:0" id="doneLead"></p></div></div>
+    <div class="counts" id="doneCounts"></div>
+    <details class="card" style="margin-bottom:14px"><summary>What was written and done</summary><div class="plan" id="donePlan" style="margin-top:10px"></div></details>
+
+    <div class="card">
+      <h3>Status</h3>
+      <div class="row" style="justify-content:flex-end; margin-bottom:8px"><button class="btn small" onclick="refreshStatus()">↻ refresh</button></div>
+      <div class="board" id="board"><div class="srow"><span class="spinner"></span><span class="muted">checking…</span><span></span></div></div>
+    </div>
+
+    <div class="card">
+      <h3>Services (claude.ai connectors)</h3>
+      <div class="small muted">Gmail, Calendar, Drive and Slack come from your claude.ai account (claude.ai → Settings → Connectors). Click <span class="hi">[ authorize ]</span> on a service: connectors open their approval page on claude.ai (counts from the next Claude session), other MCP servers run their OAuth in your browser. One at a time, only what you want.</div>
+      <div class="svc" id="services"><span><span class="spinner"></span> checking…</span></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" onclick="runAction('terminal')">Open Claude here</button>
+        <button class="btn small ghost" onclick="checkServices()">↻ re-check services</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Try it</h3>
+      <div class="small muted" style="margin-bottom:10px">The Telegram bot answers only while a phone session is running. The tray app keeps one running in the background (orange dot in the tray; the login autostart uses it). Scheduled pushes do not need it.</div>
+      <div class="row">
+        <button class="btn primary" onclick="runAction('tray')">Start the tray app</button>
+        <button class="btn" onclick="runAction('up')">Start a console session</button>
+        <button class="btn" onclick="runJob('brief')">Run the morning brief now</button>
+        <button class="btn" onclick="runAction('notify')">Test Telegram push</button>
+        <button class="btn" onclick="runAction('hook')">Test session hook</button>
+        <button class="btn" onclick="runAction('open')">Open folder</button>
+      </div>
+      <div class="out" id="actionOut" hidden></div>
+    </div>
+
+    <div class="card">
+      <h3>Schedule</h3>
+      <div class="row">
+        <button class="btn small" onclick="runAction('schedule-status')">show installed jobs</button>
+        <button class="btn small" onclick="runAction('schedule-dry')">preview</button>
+        <button class="btn small" onclick="runAction('schedule')">install / refresh</button>
+        <button class="btn small ghost" onclick="runAction('schedule-remove')">remove</button>
+      </div>
+      <div class="small dim" style="margin-top:8px">Edit <span class="hi">.pa/schedule.txt</span> then "install / refresh". Jobs run only while you are logged in and the machine is awake.</div>
+    </div>
+
+    <details class="card" style="margin-top:14px"><summary>Manual commands (if you prefer the terminal)</summary><div id="nextSteps" style="margin-top:10px"></div></details>
+
+    <div class="nav"><button class="btn ghost" onclick="go(2)">← change settings and reinstall</button><button class="btn" onclick="quit()">Close installer</button></div>
+  </section>
+
+  <footer>pa-pack · black, orange, white · 127.0.0.1 only</footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const token = new URLSearchParams(location.search).get('t') || '';
+if (!token) $('noToken').hidden = false;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { 'X-PA-Token': token, 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body || {}) });
+const toastEl = $('toast');
+function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => toastEl.classList.remove('show'), 2600); }
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+// ---------- state ----------
+let info = null;
+const state = {
+  persona: 'serious', workdays: new Set([0, 1, 2, 3, 4]), skills: new Set(),
+  toggles: { hooks: true, mcp: true, claude_md: true, state: true, scripts: true, agents: true, overwrite: true },
+  auto: { auto_trust: true, auto_plugins: true, auto_bun: true, auto_schedule: true, autostart: true },
+  bot: null,
+};
+let current = 0;
+const targetEl = $('target');
+const newFolderRow = $('newFolderRow');
+
+function go(i) {
+  current = i;
+  document.querySelectorAll('section.step').forEach(s => s.classList.toggle('active', +s.dataset.step === i));
+  document.querySelectorAll('#steps div').forEach(d => { const k = +d.dataset.i; d.classList.toggle('active', k === i); d.classList.toggle('done', k < i); });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (i === 1 && !$('dirs').children.length) browseTo(targetEl.value || info.suggested);
+}
+
+// ---------- personas ----------
+function renderPersonas() {
+  const box = $('personas'); box.innerHTML = '';
+  for (const p of info.personas) {
+    const d = document.createElement('div');
+    d.className = 'persona' + (p.id === state.persona ? ' sel' : '');
+    d.innerHTML = `<div class="check"></div><div class="em">${p.emoji}</div><div class="nm">${esc(p.name)}</div><div class="tg">${esc(p.tagline)}</div><div class="ds">${esc(p.description)}</div>`;
+    d.onclick = () => { state.persona = p.id; renderPersonas(); };
+    box.appendChild(d);
+  }
+  $('customBox').hidden = state.persona !== 'custom';
+}
+
+// ---------- folder browser ----------
+let browsePath = '';
+function statusTags(x) {
+  const t = [];
+  if (x.is_file) t.push(['err', 'that is a file']);
+  else if (!x.exists) t.push(['info', 'will be created']);
+  else if (x.empty) t.push(['ok', 'empty folder']);
+  if (x.has_claude_dir || x.has_claude_md) t.push(['info', 'existing Claude project, settings will be merged']);
+  if (x.has_pa) t.push(['warn', '.pa already here: upgrade, your state files are kept']);
+  if (x.is_git) t.push(['ok', 'git repo']);
+  return t.map(([c, s]) => `<span class="tag ${c}">${esc(s)}</span>`).join('');
+}
+async function refreshTargetStatus() {
+  const v = targetEl.value.trim();
+  if (!v) { $('targetStatus').innerHTML = ''; $('toSetup').disabled = true; return; }
+  try {
+    const x = await api('/api/inspect?path=' + encodeURIComponent(v));
+    $('targetStatus').innerHTML = statusTags(x);
+    $('toSetup').disabled = !!x.is_file;
+  } catch (e) { $('targetStatus').innerHTML = `<span class="tag err">${esc(e.message)}</span>`; }
+}
+let statusTimer;
+targetEl.addEventListener('input', () => { clearTimeout(statusTimer); statusTimer = setTimeout(refreshTargetStatus, 250); });
+
+async function browseTo(path) {
+  try {
+    const b = await api('/api/browse?path=' + encodeURIComponent(path || ''));
+    browsePath = b.path;
+    renderCrumbs(b);
+    const dirs = $('dirs'); dirs.innerHTML = '';
+    if (!b.exists) { dirs.innerHTML = '<div class="empty">folder does not exist yet. It will be created on install.</div>'; }
+    for (const d of b.dirs) {
+      const row = document.createElement('div');
+      row.className = d.hidden ? 'hidden' : '';
+      row.innerHTML = `<span>${b.roots ? '[drv]' : '[dir]'}</span><span>${esc(d.name)}</span>`;
+      row.onclick = () => { targetEl.value = d.path; refreshTargetStatus(); browseTo(d.path); };
+      dirs.appendChild(row);
+    }
+    if (b.exists && !b.dirs.length) dirs.innerHTML = '<div class="empty">no subfolders</div>';
+    if (b.path && !b.roots) { targetEl.value = b.path; refreshTargetStatus(); }
+  } catch (e) { toast(e.message); }
+}
+function renderCrumbs(b) {
+  const c = $('crumbs'); c.innerHTML = '';
+  if (!b.path) { c.innerHTML = '<span>drives</span>'; return; }
+  const sep = b.path.includes('\\') ? '\\' : '/';
+  const parts = b.path.split(sep).filter(Boolean);
+  let acc = '';
+  if (b.path.startsWith('/')) { const s = document.createElement('span'); s.textContent = '/'; s.onclick = () => browseTo('/'); c.appendChild(s); }
+  parts.forEach((p, i) => {
+    acc = i === 0 ? (b.path.startsWith('/') ? '/' + p : p + (p.endsWith(':') ? sep : '')) : acc + (acc.endsWith(sep) ? '' : sep) + p;
+    const s = document.createElement('span'); s.textContent = p; const here = acc; s.onclick = () => browseTo(here); c.appendChild(s);
+    if (i < parts.length - 1) { const sp = document.createElement('i'); sp.textContent = sep; c.appendChild(sp); }
+  });
+}
+async function upDir() {
+  const b = await api('/api/browse?path=' + encodeURIComponent(browsePath));
+  if (b.parent === null || b.parent === undefined) return;
+  browseTo(b.parent);
+}
+function newFolderUI() { newFolderRow.hidden = false; $('newFolderName').focus(); }
+async function newFolderCreate() {
+  const name = $('newFolderName').value.trim(); if (!name) return;
+  const sep = browsePath.includes('\\') ? '\\' : '/';
+  const full = browsePath ? browsePath.replace(/[\\/]+$/, '') + sep + name : name;
+  try { const r = await post('/api/mkdir', { path: full }); newFolderRow.hidden = true; $('newFolderName').value = ''; targetEl.value = r.path; refreshTargetStatus(); browseTo(r.path); toast('created ' + r.path); }
+  catch (e) { toast(e.message); }
+}
+function renderQuick() {
+  const q = $('quick'); q.innerHTML = '';
+  const sep = info.os === 'windows' ? '\\' : '/';
+  const items = [['current folder', info.cwd], ['home', info.home], ['home/assistant', info.home.replace(/[\\/]+$/, '') + sep + 'assistant']];
+  if (info.suggested && info.suggested !== info.cwd) items.unshift(['suggested', info.suggested]);
+  for (const [label, path] of items) {
+    const c = document.createElement('span'); c.className = 'chip quick'; c.textContent = label; c.title = path;
+    c.onclick = () => { targetEl.value = path; refreshTargetStatus(); browseTo(path); };
+    q.appendChild(c);
+  }
+}
+
+// ---------- setup ----------
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function renderDays() {
+  const box = $('days'); box.innerHTML = '';
+  DAYS.forEach((d, i) => {
+    const c = document.createElement('span'); c.className = 'chip' + (state.workdays.has(i) ? ' on' : ''); c.textContent = d;
+    c.onclick = () => { state.workdays.has(i) ? state.workdays.delete(i) : state.workdays.add(i); renderDays(); };
+    box.appendChild(c);
+  });
+}
+function renderSkills() {
+  const box = $('skills'); box.innerHTML = '';
+  for (const s of info.skills) {
+    const l = document.createElement('label'); l.className = 'skill' + (s.required ? ' locked' : '');
+    l.innerHTML = `<input type="checkbox" ${s.required ? 'checked disabled' : (state.skills.has(s.name) ? 'checked' : '')}><div><div class="n">/${esc(s.name)}${s.required ? ' <span class="dim">(charter, always on)</span>' : ''}</div><div class="d">${esc(s.description)}</div></div>`;
+    const cb = l.querySelector('input');
+    cb.onchange = () => { cb.checked ? state.skills.add(s.name) : state.skills.delete(s.name); };
+    box.appendChild(l);
+  }
+}
+const TOGGLES = [
+  ['hooks', 'Hooks + settings.json', 'SessionStart injects preferences, memory, today\'s log and due follow-ups. Notification forwards permission prompts to your phone. Also auto-approves .mcp.json servers and points the Telegram plugin at .pa/telegram/.'],
+  ['agents', 'Subagents', 'researcher (facts with sources) and critic (three flaws, ranked) used by research-brief.'],
+  ['mcp', '.mcp.json: Atlassian', 'Adds the Atlassian MCP server (Jira/Confluence) to .mcp.json; authenticate once with /mcp. Gmail, Calendar, Drive and Slack are claude.ai connectors and need nothing here.'],
+  ['claude_md', 'CLAUDE.md block', 'Persona and the assistant contract, between <!-- pa-pack --> markers. Existing content is kept.'],
+  ['state', '.pa/ state folder', 'preferences.md, memory.md, followups.json, schedule.txt, telegram/, log/, inbox/, briefs/. Existing files are never replaced.'],
+  ['scripts', '.pa/bin scripts + launchers', 'pa-run.sh (headless jobs), pa-schedule.sh (cron / launchd / Task Scheduler), pa-up.sh (phone session), notify.sh, pa-telegram-chatid.sh, and the pa / pa.cmd / claude.cmd launchers that add --channels.'],
+  ['overwrite', 'Overwrite pack-managed files', 'Replace skills, agents, hooks, scripts and launchers that already exist with this version. Your state files are never touched either way.'],
+];
+const AUTO = [
+  ['auto_trust', 'Mark the folder trusted', 'Writes one line for this folder into ~/.claude.json so Claude Code skips the trust dialog and applies the .pa/ permission rules immediately.'],
+  ['auto_plugins', 'Install the Telegram channel plugin', 'Registers the official marketplace and runs claude plugin install telegram@claude-plugins-official --scope project.'],
+  ['auto_bun', 'Install Bun if missing', 'The Telegram channel server runs on Bun. Uses the official installer (bun.sh).'],
+  ['auto_schedule', 'Install the proactive schedule', 'Morning brief, radar every 2h, end of day, week ahead: Task Scheduler on Windows, launchd on macOS, cron on Linux.'],
+  ['autostart', 'Start the phone session at login', 'Adds a login item that runs pa-up.sh, so the Telegram bot answers whenever you are logged in.'],
+];
+function renderToggleList(box, list, store) {
+  box.innerHTML = '';
+  for (const [k, t, s] of list) {
+    const d = document.createElement('div'); d.className = 'toggle';
+    d.innerHTML = `<div><div class="t">${esc(t)}</div><div class="s">${esc(s)}</div></div><div class="tgl ${store[k] ? 'on' : ''}">${store[k] ? '[ ON ]' : '[ OFF ]'}</div>`;
+    d.querySelector('.tgl').onclick = (e) => { store[k] = !store[k]; e.target.classList.toggle('on', store[k]); e.target.textContent = store[k] ? '[ ON ]' : '[ OFF ]'; };
+    box.appendChild(d);
+  }
+}
+function renderEnvBanner() {
+  const t = info.tools; const out = [];
+  if (!t.claude) out.push(`<div class="banner err">The <b>claude</b> CLI is not installed or not on PATH. Install Claude Code first; the automatic steps (plugin, trust check) need it.</div>`);
+  if (!t.bash) out.push(`<div class="banner">No <b>bash</b> found. The hooks and .pa/bin scripts are bash scripts. ${info.os === 'windows' ? 'Install <b>Git for Windows</b> (Claude Code needs it anyway); the installer will still write everything.' : 'Install bash to run them.'}</div>`);
+  if (!t.jq && !t.python3) out.push(`<div class="banner">Neither <b>jq</b> nor <b>python3</b> found: the session hook will print follow-ups unfiltered. Install jq for the nice version.</div>`);
+  if (info.auth && !info.auth.logged_in) out.push(`<div class="banner">Claude Code is not signed in on this machine. The Done page has a Sign in button; channels and connectors need a claude.ai login.</div>`);
+  if (info.os === 'windows' && !t.tmux) out.push(`<div class="banner info">Windows: scheduled jobs go to Task Scheduler; the tray app keeps the phone session running in the background.</div>`);
+  $('envBanner').innerHTML = out.join('');
+}
+
+// ---------- telegram ----------
+async function tgVerify() {
+  const tok = $('tgToken').value.trim();
+  if (!tok) { toast('paste the bot token first'); return; }
+  $('tgVerify').disabled = true; $('tgVerify').innerHTML = '<span class="spinner"></span>';
+  try {
+    const r = await post('/api/telegram', { token: tok, action: 'me' });
+    if (!r.ok) throw new Error(r.error);
+    state.bot = r;
+    $('tgBox').hidden = false;
+    $('tgBotLine').innerHTML = `<span class="tag ok">token OK</span> &nbsp; bot <b>${esc(r.first_name)}</b> <span class="hi">@${esc(r.username)}</span>`;
+    $('tgOpen').href = 'https://t.me/' + r.username;
+    $('tgUserLine').innerHTML = '';
+    tgAutoDetect();
+  } catch (e) { $('tgBox').hidden = true; toast('token check failed: ' + e.message); }
+  $('tgVerify').disabled = false; $('tgVerify').textContent = 'Verify token';
+}
+function tgFound(r) {
+  $('tgIds').hidden = false;
+  $('tgChat').value = r.chat_id || ''; $('tgUser').value = r.user_id || '';
+  $('tgUserLine').innerHTML = `<span class="tag ok">found you</span> &nbsp; <b>${esc(r.first_name || '')}</b> ${r.username ? '<span class="hi">@' + esc(r.username) + '</span>' : ''} · id <span class="hi">${esc(r.user_id)}</span> · last message: “${esc(r.text || '')}” — you will be allowlisted, no pairing code.`;
+}
+let tgPoll = 0;
+// After a successful token check, watch for the user's first message so nothing needs clicking.
+async function tgAutoDetect() {
+  const myPoll = ++tgPoll;
+  const tok = $('tgToken').value.trim();
+  for (let i = 0; i < 100; i++) {           // ~5 minutes
+    if (myPoll !== tgPoll || current !== 2) return;
+    if ($('tgUser').value.trim()) return;
+    $('tgUserLine').innerHTML = `<span class="spinner"></span> <span class="muted">waiting for your first message to the bot… (${i * 3}s)</span>`;
+    try {
+      const r = await post('/api/telegram', { token: tok, action: 'detect' });
+      if (r.ok && r.user_id) { tgFound(r); toast('found you on Telegram'); return; }
+    } catch (e) {}
+    await new Promise(res => setTimeout(res, 3000));
+  }
+  $('tgUserLine').innerHTML = '<span class="tag warn">no message seen yet: send the bot a message and click detect</span>';
+}
+async function tgDetect() {
+  const tok = $('tgToken').value.trim();
+  tgPoll++;
+  $('tgDetect').disabled = true; $('tgDetect').innerHTML = '<span class="spinner"></span> looking…';
+  try {
+    const r = await post('/api/telegram', { token: tok, action: 'detect' });
+    if (!r.ok) throw new Error(r.error);
+    tgFound(r);
+  } catch (e) { $('tgUserLine').innerHTML = `<span class="tag warn">${esc(e.message)}</span>`; }
+  $('tgDetect').disabled = false; $('tgDetect').textContent = 'I sent it a message → detect me';
+}
+
+// ---------- options + review ----------
+function options(dry) {
+  return {
+    target: targetEl.value.trim(),
+    skills: [...state.skills],
+    agents: state.toggles.agents, hooks: state.toggles.hooks, mcp: state.toggles.mcp, claude_md: state.toggles.claude_md,
+    state: state.toggles.state, scripts: state.toggles.scripts, overwrite: state.toggles.overwrite,
+    persona: state.persona, persona_custom: $('personaCustom').value, assistant_name: $('assistantName').value,
+    signoff: $('signoff').value, timezone: $('tz').value, workdays: [...state.workdays].sort(),
+    hours_start: $('hStart').value, hours_end: $('hEnd').value,
+    telegram_token: $('tgToken').value.trim(), telegram_chat_id: $('tgChat').value.trim(), telegram_user_id: $('tgUser').value.trim(),
+    ...state.auto,
+    dry_run: !!dry,
+  };
+}
+function renderPlan(el, steps) {
+  el.innerHTML = '';
+  for (const s of steps) {
+    const d = document.createElement('div');
+    d.innerHTML = `<span class="badge b-${esc(s.action)}">${esc(s.action)}</span><span>${esc(s.path || '(target)')}${s.note ? `<span class="n">${esc(s.note)}</span>` : ''}</span>`;
+    el.appendChild(d);
+  }
+}
+function renderCounts(el, counts) {
+  el.innerHTML = Object.entries(counts).map(([k, v]) => `<span class="tag ${k === 'error' ? 'err' : k === 'skip' ? 'warn' : (k === 'create' || k === 'ok') ? 'ok' : k === 'todo' ? 'info' : ''}">${v} ${esc(k)}</span>`).join('');
+}
+function skipPhone() { tgPoll++; $('tgToken').value = ''; $('tgChat').value = ''; $('tgUser').value = ''; $('tgBox').hidden = true; review(); }
+function summarize(r) {
+  const n = (k) => r.counts[k] || 0;
+  const files = n('create') + n('update') + n('merge');
+  const persona = (info.personas.find(p => p.id === state.persona) || {}).name || state.persona;
+  const todo = r.steps.filter(x => x.action === 'todo').map(x => x.path);
+  const same = r.steps.filter(x => x.action === 'same' && !x.path.includes('/')).map(x => x.path);
+  const lines = [];
+  lines.push(`<b>${esc($('assistantName').value || 'Pa')}</b>, personality <b>${esc(persona)}</b>, sign-off <b>${esc($('signoff').value || 'Me')}</b>.`);
+  lines.push(files ? `Writes or updates <b>${files}</b> files (${n('create')} new${n('update') ? ', ' + n('update') + ' updated' : ''}${n('merge') ? ', ' + n('merge') + ' merged' : ''})${n('same') ? `, ${n('same')} already up to date` : ''}.` : 'Everything is already up to date.');
+  const tok = $('tgToken').value.trim();
+  lines.push(tok ? ($('tgUser').value.trim() ? 'Telegram: bot token saved, <b>you are allowlisted</b>, pushes go to your phone.' : 'Telegram: bot token saved. You are not detected yet, so the first message needs a pairing code (or use Detect me now on the next page).') : 'Telegram: skipped for now (add it later from the Done page).');
+  if (todo.length) lines.push('Then, automatically: <b>' + todo.map(esc).join('</b>, <b>') + '</b>.');
+  if (same.length) lines.push('Already done: ' + same.map(esc).join(', ') + '.');
+  if (n('error')) lines.push(`<span style="color:var(--err)">${n('error')} problem(s), see the list below.</span>`);
+  return lines.map(l => `<div>• ${l}</div>`).join('');
+}
+async function review() {
+  if (!targetEl.value.trim()) { toast('pick a folder first'); go(1); return; }
+  go(3);
+  $('reviewTarget').textContent = targetEl.value.trim();
+  $('plan').innerHTML = '<div><span class="spinner"></span><span>planning…</span></div>'; $('reviewSummary').innerHTML = '<span class="spinner"></span> planning…';
+  try {
+    const r = await post('/api/install', options(true));
+    renderPlan($('plan'), r.steps); renderCounts($('reviewCounts'), r.counts); $('reviewSummary').innerHTML = summarize(r);
+    $('reviewBanner').innerHTML = r.ok ? '' : '<div class="banner err">The plan has errors. Fix them (see [error] rows) before installing.</div>';
+    $('installBtn').disabled = !r.ok;
+  } catch (e) { $('reviewBanner').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+}
+async function doInstall() {
+  $('installBtn').disabled = true; $('installBtn').innerHTML = '<span class="spinner"></span> installing and provisioning… (plugin install and Bun can take a minute)';
+  try {
+    const r = await post('/api/install', options(false));
+    showDone(r);
+  } catch (e) { $('reviewBanner').innerHTML = `<div class="banner err">${esc(e.message)}</div>`; }
+  $('installBtn').disabled = false; $('installBtn').textContent = 'Install';
+}
+
+// ---------- done: status board ----------
+function cmdRow(k, c) { return `<div class="cmd"><span class="k">${esc(k)}</span><code>${esc(c)}</code><button class="btn small ghost" onclick="copyText(this)">copy</button></div>`; }
+function copyText(btn) { const t = btn.parentElement.querySelector('code').textContent; navigator.clipboard?.writeText(t).then(() => toast('copied')); }
+function showDone(r) {
+  go(4);
+  $('doneEmoji').textContent = r.ok ? '✻' : '!';
+  $('doneTitle').textContent = r.ok ? 'Installed' : 'Installed with errors';
+  $('doneLead').innerHTML = `${esc(r.target)}`;
+  renderCounts($('doneCounts'), r.counts); renderPlan($('donePlan'), r.steps);
+  const win = info.os === 'windows';
+  const q = (p) => (p.includes(' ') ? `"${p}"` : p);
+  const sh = win ? 'bash .pa/bin/' : '.pa/bin/';
+  const pa = win ? 'pa' : './pa';
+  const steps = [
+    ['Start with phone', `cd ${q(r.target)}\n${pa}          (= claude --channels plugin:telegram@claude-plugins-official; ${pa} -c continues)`],
+    ['Without phone', `cd ${q(r.target)}\nclaude`],
+    ['Sign in', 'claude auth login'],
+    ['Authenticate services', '/mcp   (inside claude)'],
+    ['Phone session', `${sh}pa-up.sh`],
+    ['Telegram id (fallback)', `${sh}pa-telegram-chatid.sh`],
+    ['Morning brief', `${sh}pa-run.sh morning-brief`],
+    ['Schedule', `${sh}pa-schedule.sh   |   pa-schedule.sh status   |   pa-schedule.sh remove`],
+  ];
+  $('nextSteps').innerHTML = steps.map(([k, c]) => cmdRow(k, c)).join('') +
+    `<div class="small dim" style="margin-top:8px">Say "morning", "triage", "remind me…" or "who is X" in the session. Edit <span class="hi">.pa/preferences.md</span> to teach it your rules.</div>`;
+  $('actionOut').hidden = true;
+  refreshStatus(); checkServices();
+}
+function srow(ok, title, sub, action, cls) {
+  const st = cls || (ok ? 'ok' : 'bad');
+  const ic = st === 'ok' ? '[ OK ]' : st === 'err' ? '[FAIL]' : st === 'info' ? '[INFO]' : '[WARN]';
+  return `<div class="srow ${st}"><div class="ic">${ic}</div><div><div class="t">${title}</div><div class="s">${sub}</div></div><div>${action || ''}</div></div>`;
+}
+const act = (what, label, extra) => `<button class="btn small" onclick="runAction('${what}')">${esc(label)}</button>${extra || ''}`;
+async function refreshStatus() {
+  const board = $('board');
+  try {
+    const s = await api('/api/status?target=' + encodeURIComponent(targetEl.value.trim()));
+    const rows = [];
+    rows.push(srow(s.installed, 'Files', s.installed ? `${s.skills} skills, hooks ${s.hooks ? 'on' : 'missing'}, CLAUDE.md ${s.claude_md ? 'has the pa block' : 'missing the pa block'}` : 'not installed', ''));
+    rows.push(srow(!!s.claude, 'Claude Code CLI', s.claude ? esc(s.claude) : 'not found on PATH', '', s.claude ? 'ok' : 'err'));
+    rows.push(srow(s.auth.logged_in, 'Signed in', s.auth.logged_in ? `${esc(s.auth.email || '')} (${esc(s.auth.method || '')})` : 'not signed in: channels and connectors need a claude.ai login', s.auth.logged_in ? '' : act('login', 'Sign in')));
+    rows.push(srow(s.trusted, 'Workspace trusted', s.trusted ? 'no trust dialog, .pa/ permission rules active' : 'Claude Code will ask on first start and ignore the .pa/ rules until then', s.trusted ? '' : act('trust', 'Trust now')));
+    rows.push(srow(s.plugin, 'Telegram channel plugin', s.plugin ? 'enabled for this project' : (s.marketplace ? 'marketplace registered, plugin not installed' : 'not installed'), s.plugin ? '' : act('plugins', 'Install')));
+    rows.push(srow(!!s.bun, 'Bun', s.bun ? esc(s.bun) : 'missing: the Telegram server needs it', s.bun ? '' : act('bun', 'Install Bun')));
+    rows.push(srow(s.telegram_token, 'Telegram bot token', s.telegram_token ? '.pa/telegram/.env' : 'none: paste it in Setup, or run /telegram:configure <token> inside claude', s.telegram_token ? '' : `<button class="btn small" onclick="go(2)">Setup</button>`));
+    const detectBtn = s.telegram_token ? act('detect', 'Detect me now') : `<button class="btn small" onclick="go(2)">Setup</button>`;
+    rows.push(srow(s.telegram_users > 0, 'Telegram access', s.telegram_users > 0 ? `${s.telegram_users} allowlisted, policy ${esc(s.telegram_policy)}` : `policy ${esc(s.telegram_policy)}: send the bot one message, then click Detect me now (no pairing code)`, s.telegram_users > 0 ? '' : detectBtn, s.telegram_users > 0 ? 'ok' : 'bad'));
+    rows.push(srow(s.chat_id, 'Push chat id', s.chat_id ? 'scheduled jobs will push to your phone' : 'not set: jobs print instead of pushing', s.chat_id ? '' : detectBtn, s.chat_id ? 'ok' : 'info'));
+    rows.push(srow(s.tray, 'Tray app', s.tray ? 'installed: .pa/bin/pa-tray keeps the phone session running in the background' : 'not in this installer build', s.tray ? act('tray', 'Start') : '', s.tray ? 'ok' : 'info'));
+    rows.push(srow(s.launcher, 'Phone launcher', s.launcher ? `start the assistant with <span class="hi">${info.os === 'windows' ? 'pa' : './pa'}</span> in the folder (adds --channels; plain claude has no Telegram)` : 'missing: reinstall with scripts on', ''));
+    rows.push(srow(s.schedule, 'Proactive schedule', s.schedule ? 'installed' + (s.autostart ? ', phone session starts at login' : '') : 'not installed', s.schedule ? '' : act('schedule', 'Install')));
+    board.innerHTML = rows.join('');
+  } catch (e) { board.innerHTML = `<div class="srow err"><div class="ic">[FAIL]</div><div>${esc(e.message)}</div><div></div></div>`; }
+}
+async function pollJob(id, onDone) {
+  for (let i = 0; i < 600; i++) {
+    const j = await api('/api/job?id=' + id);
+    if (j.done) { onDone(j); return; }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  onDone({ ok: false, output: 'timed out' });
+}
+async function checkServices() {
+  const el = $('services'); el.innerHTML = '<span><span class="spinner"></span> checking (claude mcp list)…</span>';
+  try {
+    const r = await post('/api/run', { target: targetEl.value.trim(), what: 'services' });
+    pollJob(r.job, (j) => {
+      if (!j.ok) { el.innerHTML = `<span class="failed">${esc(j.output)}</span>`; return; }
+      let data; try { data = JSON.parse(j.output); } catch { el.innerHTML = `<span class="failed">${esc(j.output)}</span>`; return; }
+      const servers = data.servers || [];
+      if (!servers.length) { el.innerHTML = '<span class="failed">no servers listed. Sign in, then add connectors at claude.ai → Settings → Connectors.</span>'; return; }
+      const label = { connected: 'connected', needs_auth: 'needs auth', failed: 'failed', pending: 'pending approval', unknown: '?' };
+      servers.sort((a, b) => (b.relevant - a.relevant));
+      el.innerHTML = servers.map(s => {
+        const canAuth = s.status === 'needs_auth' || s.status === 'pending';
+        const btn = canAuth ? ` <button class="btn small" onclick="authorize(${JSON.stringify(s.name).replace(/"/g, '&quot;')})">authorize</button>` : '';
+        return `<span class="${esc(s.status)} ${s.relevant ? '' : 'other'}" title="${esc(s.detail)}">${esc(s.name)} · ${label[s.status] || s.status}${btn}</span>`;
+      }).join('');
+    });
+  } catch (e) { el.innerHTML = `<span class="failed">${esc(e.message)}</span>`; }
+}
+// One service at a time: claude.ai connectors open their approval page on claude.ai (instant, applies next session);
+// plain MCP servers run claude's own OAuth flow in the browser and wait for the callback.
+async function authorize(name) {
+  const out = $('actionOut'); out.hidden = false;
+  const connector = name.startsWith('claude.ai ');
+  out.innerHTML = `<span class="spinner"></span> ${connector ? 'fetching the claude.ai authorization page for' : 'starting OAuth for'} ${esc(name)}…`;
+  try {
+    const r = await post('/api/run', { target: targetEl.value.trim(), what: 'authorize', name });
+    if (r.job) {
+      out.innerHTML = `<span class="spinner"></span> browser opened for ${esc(name)}: finish the consent screen there…`;
+      pollJob(r.job, (j) => { out.textContent = (j.ok ? '' : '[failed] ') + (j.output || '(no output)'); setTimeout(checkServices, 1500); });
+    } else {
+      out.textContent = (r.ok ? '' : '[failed] ') + (r.output || '(no output)');
+      if (r.ok) out.textContent += '\n\nWhen you have approved it on claude.ai, click "re-check services".';
+    }
+  } catch (e) { out.textContent = e.message; }
+}
+async function runAction(what) {
+  const out = $('actionOut'); out.hidden = false; out.innerHTML = '<span class="spinner"></span> running…';
+  try {
+    const r = await post('/api/run', { target: targetEl.value.trim(), what });
+    out.textContent = (r.ok ? '' : '[failed] ') + (r.output || '(no output)');
+    if (['trust', 'plugins', 'bun', 'schedule', 'schedule-remove', 'login', 'detect'].includes(what)) setTimeout(refreshStatus, 800);
+  } catch (e) { out.textContent = e.message; }
+}
+async function runJob(what) {
+  const out = $('actionOut'); out.hidden = false; out.innerHTML = '<span class="spinner"></span> running the morning brief headless (30–90 s)…';
+  try {
+    const r = await post('/api/run', { target: targetEl.value.trim(), what });
+    pollJob(r.job, (j) => { out.textContent = (j.ok ? '' : '[failed] ') + (j.output || '(no output)'); });
+  } catch (e) { out.textContent = e.message; }
+}
+async function quit() {
+  try { await post('/api/quit', {}); } catch (e) {}
+  document.body.innerHTML = '<div class="wrap" style="padding-top:120px"><div class="hello"><div><span class="spark">✻</span> <span class="t">Installer closed.</span></div><div class="s">&nbsp;&nbsp;You can close this tab.</div></div></div>';
+}
+
+// ---------- boot ----------
+(async function boot() {
+  try { info = await api('/api/info'); } catch (e) { $('noToken').hidden = false; $('noToken').textContent = 'Cannot reach the installer: ' + e.message; return; }
+  $('ver').textContent = 'v' + info.version;
+  for (const s of info.skills) state.skills.add(s.name);
+  renderPersonas(); renderQuick(); renderDays(); renderSkills();
+  renderToggleList($('toggles'), TOGGLES, state.toggles);
+  renderToggleList($('autoToggles'), AUTO, state.auto);
+  renderEnvBanner();
+  try { $('tz').value = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+  targetEl.value = info.suggested || '';
+  refreshTargetStatus();
+})();
+</script>
+</body>
+</html>

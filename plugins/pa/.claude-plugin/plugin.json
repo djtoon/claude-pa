@@ -1,0 +1,6 @@
+{
+  "name": "pa",
+  "version": "0.1.0",
+  "description": "Personal assistant: morning brief, inbox triage, calendar guard, follow-ups, proactive radar, end of day, memory.",
+  "author": { "name": "Dan Shamir" }
+}

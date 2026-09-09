@@ -1,0 +1,13 @@
+{
+  "name": "pa-pack",
+  "owner": { "name": "Dan Shamir" },
+  "metadata": { "description": "Personal assistant pack for Claude Code: proactive, phone-reachable, connected to Gmail, Calendar, Drive, Slack and Jira." },
+  "plugins": [
+    {
+      "name": "pa",
+      "source": "./plugins/pa",
+      "description": "Personal assistant: morning brief, inbox triage, calendar guard, follow-ups, proactive radar, end of day, memory.",
+      "version": "0.1.0"
+    }
+  ]
+}

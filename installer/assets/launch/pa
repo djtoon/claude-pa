@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Start the assistant with the phone channel. Plain `claude` has no Telegram; this adds the flag every time.
+# Usage: ./pa            new session
+#        ./pa -c         continue the last session
+#        ./pa <args...>  any other claude arguments
+cd "$(dirname "$0")" || exit 1
+exec claude --channels plugin:telegram@claude-plugins-official "$@"

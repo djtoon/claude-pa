@@ -1,0 +1,17 @@
+[package]
+name = "pa-tray"
+version = "0.1.0"
+edition = "2021"
+description = "Tray app that keeps the pa-pack phone session (claude --channels telegram) running in the background."
+license = "MIT"
+
+[dependencies]
+tray-icon = "0.21"
+winit = "0.30"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

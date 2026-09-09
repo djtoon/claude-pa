@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Starts the tray app: an orange dot in the menu bar / system tray that keeps the phone session (Telegram)
+# running in a detached tmux session. Click it to open the session in a terminal, stop it, run the brief, or quit.
+cd "$(dirname "$0")" || exit 1
+if pgrep -f "$(pwd)/.pa/bin/pa-tray" >/dev/null 2>&1; then echo "pa-tray is already running."; exit 0; fi
+nohup ./.pa/bin/pa-tray >/dev/null 2>&1 &
+echo "pa-tray started (orange dot in the tray / menu bar)."
