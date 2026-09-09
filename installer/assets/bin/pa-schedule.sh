@@ -123,9 +123,10 @@ MINGW*|MSYS*|CYGWIN*)
       echo "login autostart: $LOGIN_CMD"
       continue
     fi
-    # Supported cron subset: minute N; hour N or A-B[/S]; day-of-week * , list, or A-B. (day-of-month/month ignored.)
+    # Supported cron subset: minute N or */N; hour N or A-B[/S]; day-of-week * , list, or A-B. (day-of-month/month ignored.)
+    if [[ "$c1" == \*/* ]]; then mstep=${c1#*/}; mstart=0; else mstep=""; mstart=$c1; fi
     hr="${c2%%/*}"; hr="${hr%%-*}"
-    ST=$(printf '%02d:%02d' "$hr" "$c1")
+    ST=$(printf '%02d:%02d' "$hr" "$mstart")
     if [ "$c5" = "*" ]; then dl="SUN,MON,TUE,WED,THU,FRI,SAT"; else
       dl=""
       for part in ${c5//,/ }; do
@@ -135,7 +136,12 @@ MINGW*|MSYS*|CYGWIN*)
       dl=${dl#,}
     fi
     rep=()
-    if [[ "$c2" == *-* ]]; then
+    if [ -n "$mstep" ]; then
+      range=${c2%%/*}
+      if [[ "$range" == *-* ]]; then a=${range%-*}; b=${range#*-}; else a=$range; b=$range; fi
+      DU=$(printf '%02d:00' $((b-a+1)))
+      rep=(/RI "$mstep" /DU "$DU")
+    elif [[ "$c2" == *-* ]]; then
       range=${c2%%/*}; step=${c2#*/}; [ "$step" = "$c2" ] && step=1
       a=${range%-*}; b=${range#*-}
       DU=$(printf '%02d:00' $((b-a+1)))

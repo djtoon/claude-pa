@@ -31,6 +31,10 @@ pub struct Options {
     pub workdays: Vec<u8>,
     pub hours_start: String,
     pub hours_end: String,
+    /// Proactive loop: run the radar every N minutes between hours_start and hours_end on workdays (0 = off).
+    pub loop_minutes: u32,
+    /// Send a short digest even when nothing is urgent (otherwise the radar stays quiet).
+    pub loop_always: bool,
     pub telegram_token: String,
     pub telegram_chat_id: String,
     /// Numeric Telegram user id to allowlist for the channel plugin (usually equals the chat id of a DM).
@@ -67,6 +71,8 @@ impl Default for Options {
             workdays: vec![0, 1, 2, 3, 4],
             hours_start: "09:00".into(),
             hours_end: "18:30".into(),
+            loop_minutes: 120,
+            loop_always: false,
             telegram_token: String::new(),
             telegram_chat_id: String::new(),
             telegram_user_id: String::new(),
@@ -507,10 +513,38 @@ fn merge_access(existing: Option<String>, user_id: &str) -> Result<String, Strin
     Ok(text)
 }
 
-/// schedule.txt: keep the user's lines, but make the autostart line follow the option.
-fn merge_schedule(existing: Option<String>, generated: &str, autostart: bool) -> String {
+/// The radar line for schedule.txt from the loop settings: `*/30 9-17 * * 0,1,2,3,4 radar` or `7 9-17/2 ...`.
+fn radar_line(o: &Options, dow: &str) -> Option<String> {
+    if o.loop_minutes == 0 {
+        return None;
+    }
+    let hour = |t: &str, d: u32| t.split(':').next().and_then(|h| h.trim().parse::<u32>().ok()).filter(|h| *h < 24).unwrap_or(d);
+    let h1 = hour(&o.hours_start, 9);
+    let h2raw = hour(&o.hours_end, 18);
+    let h2 = if h2raw > h1 { h2raw - 1 } else { h1 };
+    let m = o.loop_minutes.clamp(5, 24 * 60);
+    let time = if m < 60 { format!("*/{m} {h1}-{h2}") } else { format!("7 {h1}-{h2}/{}", (m / 60).max(1)) };
+    let skill = if o.loop_always { "radar Always send a short digest even when nothing is urgent; never output RADAR_QUIET." } else { "radar" };
+    Some(format!("radar         {time} * * {dow}        {skill}"))
+}
+
+/// schedule.txt: keep the user's lines, but make the radar and autostart lines follow the options.
+fn merge_schedule(existing: Option<String>, generated: &str, autostart: bool, radar: Option<String>) -> String {
     let base = existing.map(|t| norm(&t)).unwrap_or_else(|| generated.to_string());
-    let mut lines: Vec<String> = base.lines().filter(|l| !l.trim_start().starts_with("session ")).map(|l| l.to_string()).collect();
+    let mut lines: Vec<String> = base
+        .lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            !t.starts_with("session ") && !t.starts_with("radar ")
+        })
+        .map(|l| l.to_string())
+        .collect();
+    while lines.last().map(|l| l.trim().is_empty()).unwrap_or(false) {
+        lines.pop();
+    }
+    if let Some(r) = radar {
+        lines.push(r);
+    }
     if autostart {
         lines.push(AUTOSTART_LINE.to_string());
     }
@@ -610,10 +644,12 @@ pub fn run(o: &Options) -> Report {
         f.put(&pa.join("memory.md"), pack::MEMORY_MD, false);
         f.put(&pa.join("followups.json"), "[]\n", false);
         let (dow, first) = workdays_cron(&o.workdays);
-        let generated = pack::asset("state/schedule.txt").replace("{{DOW}}", &dow).replace("{{FIRST_DOW}}", &first);
+        let generated = pack::asset("state/schedule.txt").replace("{{DOW}}", &dow).replace("{{FIRST_DOW}}", &first).replace("{{RADAR_LINE}}", "");
         let sched_path = pa.join("schedule.txt");
-        let sched = merge_schedule(read_opt(&sched_path), &generated, o.autostart);
-        f.put_merged(&sched_path, &sched, "update", if o.autostart { "phone session starts at login" } else { "no autostart line" });
+        let radar = radar_line(o, &dow);
+        let sched = merge_schedule(read_opt(&sched_path), &generated, o.autostart, radar);
+        let loop_note = if o.loop_minutes == 0 { "proactive loop off".to_string() } else { format!("proactive loop every {} min{}", o.loop_minutes, if o.loop_always { ", digest even when quiet" } else { "" }) };
+        f.put_merged(&sched_path, &sched, "update", format!("{loop_note}{}", if o.autostart { "; phone session starts at login" } else { "" }));
         f.put(&pa.join(".gitignore"), ".env\nruns/\ntelegram/\n", false);
 
         // Telegram: chat id for pushes (.pa/.env), token + allowlist for the channel plugin (.pa/telegram/).
@@ -980,6 +1016,8 @@ pub fn status(path: &str) -> Value {
         "chat_id": read_opt(&pa.join(".env")).map(|t| t.lines().any(|l| l.starts_with("TELEGRAM_CHAT_ID=") && l.len() > 17)).unwrap_or(false),
         "schedule": provision::schedule_installed(&root),
         "autostart": sched.lines().any(|l| l.trim_start().starts_with("session ")),
+        "radar_line": sched.lines().find(|l| l.trim_start().starts_with("radar ")).map(|l| l.split_whitespace().skip(1).take(5).collect::<Vec<_>>().join(" ")),
+        "radar_always": sched.lines().any(|l| l.trim_start().starts_with("radar ") && l.contains("RADAR_QUIET")),
         "auth": provision::auth_status(),
         "claude": provision::claude_bin().map(|p| p.to_string_lossy().to_string()),
         "bash": provision::find_bash().map(|p| p.to_string_lossy().to_string()),

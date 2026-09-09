@@ -2,6 +2,5 @@
 # Rerun .pa/bin/pa-schedule.sh after editing.
 # name        min hour dom mon dow      skill [extra prompt]
 morning       35 7 * * {{DOW}}            morning-brief
-radar         7 9-19/2 * * {{DOW}}        radar
-eod           35 18 * * {{DOW}}           end-of-day
+{{RADAR_LINE}}eod           35 18 * * {{DOW}}           end-of-day
 week-ahead    5 8 * * {{FIRST_DOW}}       morning-brief the week ahead: next 7 days, key meetings, deadlines, prep needed

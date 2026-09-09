@@ -63,6 +63,18 @@ shims cannot be spawned that way and the server dies with "Connection closed". T
 real `bun.exe` / `bun` binary (official installer, `~/.bun/bin`) and every launcher puts `~/.bun/bin` and
 `~/.local/bin` first on PATH.
 
+## Proactive loop
+
+Step 3 of the wizard has **Proactive updates**: check every off / 15 min / 30 min / 1 h / 2 h / 4 h, plus
+"also when nothing is urgent". The installer turns that into the `radar` line of `.pa/schedule.txt`
+(`*/30 9-17 * * 0,1,2,3,4 radar` or `7 9-17/2 …`), bounded by your day start/end and workdays, and
+installs it with the morning brief, end-of-day and week-ahead jobs (Task Scheduler / launchd / cron).
+Each run is a headless `claude -p` in the folder: it reads `.pa/` (preferences, memory, follow-ups,
+last-run stamp), checks mail, calendar, Slack and Jira for what changed, and pushes one message through
+`notify.sh`: Telegram when the bot is set up, otherwise a desktop notification (Windows toast, macOS
+notification, `notify-send`). Quiet runs are suppressed unless "also when nothing is urgent" is on.
+`pa-installer install DIR --loop 30 --loop-always` from the CLI; "Run the radar now" on the Done page.
+
 ## Reliability (a bot you talk to once a day)
 
 - The tray app is a watchdog: it clears Claude Code's 15-minute "recent failure" cache for the Telegram server

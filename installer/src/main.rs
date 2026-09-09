@@ -300,15 +300,17 @@ fn start_job(jobs: &provision::Jobs, target: &str, what: &str, name: &str) -> Va
             });
             json!({ "ok": true, "job": id })
         }
-        "brief" => {
-            let id = jobs.spawn("brief", move || {
-                match provision::run_bash(&root, &root.join(".pa/bin/pa-run.sh"), &["morning-brief"], &[]) {
+        "brief" | "radar" => {
+            let skill: &'static str = if what == "brief" { "morning-brief" } else { "radar" };
+            let prefix = format!("{skill}-");
+            let id = jobs.spawn(skill, move || {
+                match provision::run_bash(&root, &root.join(".pa/bin/pa-run.sh"), &[skill], &[]) {
                     Ok((ok, out)) => {
                         // pa-run.sh writes the message to .pa/runs/<skill>-<stamp>.md; show the newest one.
                         let newest = std::fs::read_dir(root.join(".pa/runs"))
                             .ok()
                             .and_then(|d| {
-                                let mut v: Vec<_> = d.flatten().filter(|e| e.file_name().to_string_lossy().starts_with("morning-brief-") && e.path().extension().map(|x| x == "md").unwrap_or(false)).collect();
+                                let mut v: Vec<_> = d.flatten().filter(|e| e.file_name().to_string_lossy().starts_with(&prefix) && e.path().extension().map(|x| x == "md").unwrap_or(false)).collect();
                                 v.sort_by_key(|e| e.file_name());
                                 v.pop()
                             })
@@ -371,6 +373,8 @@ fn parse_args() -> Result<Args, String> {
                     "--name" => o.assistant_name = next()?,
                     "--signoff" => o.signoff = next()?,
                     "--tz" => o.timezone = next()?,
+                    "--loop" => o.loop_minutes = next()?.parse().map_err(|_| "--loop needs minutes (0 = off)".to_string())?,
+                    "--loop-always" => o.loop_always = true,
                     "--telegram-token" => o.telegram_token = next()?,
                     "--telegram-chat" => o.telegram_chat_id = next()?,
                     "--telegram-user" => o.telegram_user_id = next()?,
@@ -563,7 +567,7 @@ fn main() {
                 let target = field("target");
                 let what = field("what");
                 let name = field("name");
-                let background = what == "services" || what == "brief" || (what == "authorize" && !name.starts_with("claude.ai "));
+                let background = what == "services" || what == "brief" || what == "radar" || (what == "authorize" && !name.starts_with("claude.ai "));
                 if background {
                     json_response(200, &start_job(&jobs, &target, &what, &name))
                 } else {

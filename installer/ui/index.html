@@ -306,6 +306,14 @@
       </div>
     </div>
 
+    <div class="card">
+      <h3>Proactive updates</h3>
+      <div class="small muted" style="margin-bottom:8px">On its own, between your day start and end on workdays, the assistant reads its memory and follow-ups, checks mail, calendar, Slack and Jira for what changed, and messages you: on Telegram, or as a desktop notification when Telegram is not set up. The morning brief and the end-of-day summary run too.</div>
+      <label class="f">Check every</label>
+      <div class="row" id="loopChips"></div>
+      <div class="toggle" style="margin-top:8px"><div><div class="t">Also when nothing is urgent</div><div class="s">Send a short digest every time instead of staying quiet.</div></div><div class="tgl" id="loopAlways" onclick="toggleLoopAlways()">[ OFF ]</div></div>
+    </div>
+
     <details class="adv">
       <summary>More settings (the defaults are fine)</summary>
     <div class="card" style="margin-top:12px">
@@ -391,6 +399,7 @@
     <details class="adv"><summary>More: morning brief, schedule, console session, manual commands</summary>
       <div class="row" style="margin:10px 0">
         <button class="btn" onclick="runJob('brief')">Run the morning brief now</button>
+        <button class="btn" onclick="runJob('radar')">Run the radar now</button>
         <button class="btn" onclick="runAction('up')">Start a console session</button>
         <button class="btn" onclick="runAction('hook')">Test session hook</button>
       </div>
@@ -442,6 +451,7 @@ function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;'
 let info = null;
 const state = {
   persona: 'serious', workdays: new Set([0, 1, 2, 3, 4]), skills: new Set(),
+  loopMinutes: 120, loopAlways: false,
   toggles: { hooks: true, mcp: true, claude_md: true, state: true, scripts: true, agents: true, overwrite: true },
   auto: { auto_prereqs: true, auto_trust: true, auto_plugins: true, auto_bun: true, auto_schedule: true, autostart: true },
   bot: null,
@@ -553,6 +563,17 @@ function renderQuick() {
 
 // ---------- setup ----------
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const LOOPS = [[0, 'off'], [15, '15 min'], [30, '30 min'], [60, '1 h'], [120, '2 h'], [240, '4 h']];
+function renderLoop() {
+  const box = $('loopChips'); box.innerHTML = '';
+  for (const [m, label] of LOOPS) {
+    const c = document.createElement('span'); c.className = 'chip' + (state.loopMinutes === m ? ' on' : ''); c.textContent = label;
+    c.onclick = () => { state.loopMinutes = m; renderLoop(); };
+    box.appendChild(c);
+  }
+  const t = $('loopAlways'); t.classList.toggle('on', state.loopAlways); t.textContent = state.loopAlways ? '[ ON ]' : '[ OFF ]';
+}
+function toggleLoopAlways() { state.loopAlways = !state.loopAlways; renderLoop(); }
 function renderDays() {
   const box = $('days'); box.innerHTML = '';
   DAYS.forEach((d, i) => {
@@ -668,6 +689,7 @@ function options(dry) {
     persona: state.persona, persona_custom: $('personaCustom').value, assistant_name: $('assistantName').value,
     signoff: $('signoff').value, timezone: $('tz').value, workdays: [...state.workdays].sort(),
     hours_start: $('hStart').value, hours_end: $('hEnd').value,
+    loop_minutes: state.loopMinutes, loop_always: state.loopAlways,
     telegram_token: $('tgToken').value.trim(), telegram_chat_id: $('tgChat').value.trim(), telegram_user_id: $('tgUser').value.trim(),
     ...state.auto,
     dry_run: !!dry,
@@ -694,6 +716,7 @@ function summarize(r) {
   const lines = [];
   lines.push(`<b>${esc($('assistantName').value || 'Pa')}</b>, personality <b>${esc(persona)}</b>, sign-off <b>${esc($('signoff').value || 'Me')}</b>.`);
   lines.push(files ? `Writes or updates <b>${files}</b> files (${n('create')} new${n('update') ? ', ' + n('update') + ' updated' : ''}${n('merge') ? ', ' + n('merge') + ' merged' : ''})${n('same') ? `, ${n('same')} already up to date` : ''}.` : 'Everything is already up to date.');
+  lines.push(state.loopMinutes ? `Proactive updates every <b>${LOOPS.find(l => l[0] === state.loopMinutes)?.[1] || state.loopMinutes + ' min'}</b> on workdays${state.loopAlways ? ', digest even when quiet' : ', only when something needs you'}; morning brief and end-of-day too.` : 'Proactive updates: off (morning brief and end-of-day still run).');
   const tok = $('tgToken').value.trim();
   lines.push(tok ? ($('tgUser').value.trim() ? 'Telegram: bot token saved, <b>you are allowlisted</b>, pushes go to your phone.' : 'Telegram: bot token saved. You are not detected yet, so the first message needs a pairing code (or use Detect me now on the next page).') : 'Telegram: skipped for now (add it later from the Done page).');
   if (todo.length) lines.push('Then, automatically: <b>' + todo.map(esc).join('</b>, <b>') + '</b>.');
@@ -777,6 +800,7 @@ async function refreshStatus() {
     tg.push(srow(s.telegram_token, 'Bot token', s.telegram_token ? 'saved' : 'none yet: add it in step 3 (Phone) and reinstall', s.telegram_token ? '' : `<button class="btn small" onclick="go(2)">Add</button>`));
     if (s.telegram_token) tg.push(srow(s.telegram_global, 'Bot config where Claude reads it', s.telegram_global ? 'in place' : 'missing: click Sync', s.telegram_global ? '' : act('sync-telegram', 'Sync')));
     tg.push(srow(s.telegram_users > 0, 'You are allowed to talk to it', s.telegram_users > 0 ? `yes (${s.telegram_users} user${s.telegram_users > 1 ? 's' : ''})` : 'not yet: send the bot any message, then click Detect me', s.telegram_users > 0 ? '' : detectBtn, s.telegram_users > 0 ? 'ok' : 'bad'));
+    tg.push(srow(!!s.radar_line, 'Proactive loop', s.radar_line ? `radar at ${esc(s.radar_line)}${s.radar_always ? ', digest even when quiet' : ', only when something needs you'}` : 'off', '', s.radar_line ? 'ok' : 'info'));
     tg.push(srow(s.chat_id, 'Pushes to your phone', s.chat_id ? 'on (morning brief, radar, end of day)' : 'off until you are detected', s.chat_id ? '' : '', s.chat_id ? 'ok' : 'info'));
     tg.push(srow(s.plugin && !!s.bun, 'Telegram engine', (s.plugin ? 'plugin installed' : 'plugin missing') + ', ' + (s.bun ? 'runtime ok' : 'runtime missing'), (s.plugin && s.bun) ? '' : (s.plugin ? act('bun', 'Install runtime') : act('plugins', 'Install plugin'))));
     $('tgBoard').innerHTML = tg.join('');
@@ -847,7 +871,7 @@ async function runAction(what) {
   } catch (e) { out.textContent = e.message; }
 }
 async function runJob(what) {
-  const out = $('actionOut'); out.hidden = false; out.innerHTML = '<span class="spinner"></span> running the morning brief headless (30–90 s)…';
+  const out = $('actionOut'); out.hidden = false; out.innerHTML = `<span class="spinner"></span> running ${what === 'brief' ? 'the morning brief' : 'the radar'} headless (30–90 s)… it will also be pushed to your phone / desktop.`;
   try {
     const r = await post('/api/run', { target: targetEl.value.trim(), what });
     pollJob(r.job, (j) => { out.textContent = (j.ok ? '' : '[failed] ') + (j.output || '(no output)'); });
@@ -880,7 +904,7 @@ async function quit() {
   try { info = await api('/api/info'); } catch (e) { $('noToken').hidden = false; $('noToken').textContent = 'Cannot reach the installer: ' + e.message; return; }
   $('ver').textContent = 'v' + info.version;
   for (const s of info.skills) state.skills.add(s.name);
-  renderPersonas(); renderQuick(); renderDays(); renderSkills();
+  renderPersonas(); renderQuick(); renderDays(); renderLoop(); renderSkills();
   renderToggleList($('toggles'), TOGGLES, state.toggles);
   renderToggleList($('autoToggles'), AUTO, state.auto);
   renderEnvBanner();
