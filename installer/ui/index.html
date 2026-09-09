@@ -398,6 +398,13 @@
 
     <details class="card" style="margin-top:14px"><summary>Manual commands (if you prefer the terminal)</summary><div id="nextSteps" style="margin-top:10px"></div></details>
 
+    <details class="adv" style="margin-top:14px"><summary>Uninstall</summary>
+      <div class="small muted" style="margin:8px 0">Stops the sessions and removes the scheduled jobs, login autostart, plugin scope, trust entry, plugin-dir Telegram state and the launchers. "Purge" also deletes <span class="hi">.pa/</span> and <span class="hi">.claude/</span> and the CLAUDE.md block, so the folder is back to how it was.</div>
+      <div class="row">
+        <button class="btn small" id="unBtn" onclick="uninstallFlow(false)">Uninstall (keep my files)</button>
+        <button class="btn small ghost" id="unPurgeBtn" onclick="uninstallFlow(true)">Uninstall + purge</button>
+      </div>
+    </details>
     <div class="nav"><button class="btn ghost" onclick="go(2)">← change settings and reinstall</button><button class="btn" onclick="quit()">Close installer</button></div>
   </section>
 
@@ -820,6 +827,23 @@ async function runJob(what) {
   try {
     const r = await post('/api/run', { target: targetEl.value.trim(), what });
     pollJob(r.job, (j) => { out.textContent = (j.ok ? '' : '[failed] ') + (j.output || '(no output)'); });
+  } catch (e) { out.textContent = e.message; }
+}
+let unArmed = null;
+async function uninstallFlow(purge) {
+  const btn = $(purge ? 'unPurgeBtn' : 'unBtn');
+  if (unArmed !== (purge ? 'purge' : 'keep')) {
+    unArmed = purge ? 'purge' : 'keep';
+    btn.textContent = purge ? 'Really delete .pa and .claude? click again' : 'Really uninstall? click again';
+    setTimeout(() => { unArmed = null; btn.textContent = purge ? 'Uninstall + purge' : 'Uninstall (keep my files)'; }, 6000);
+    return;
+  }
+  unArmed = null; btn.textContent = purge ? 'Uninstall + purge' : 'Uninstall (keep my files)';
+  const out = $('actionOut'); out.hidden = false; out.innerHTML = '<span class="spinner"></span> uninstalling…';
+  try {
+    const r = await post('/api/run', { target: targetEl.value.trim(), what: 'uninstall', name: purge ? 'purge' : '' });
+    out.textContent = (r.ok ? '' : '[some steps failed] ') + (r.output || '(no output)');
+    setTimeout(refreshStatus, 800);
   } catch (e) { out.textContent = e.message; }
 }
 async function quit() {

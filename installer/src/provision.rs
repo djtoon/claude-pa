@@ -348,6 +348,80 @@ pub fn sync_telegram_state(root: &Path) -> Result<String, String> {
     Ok(if notes.is_empty() { "already in sync".into() } else { format!("synced {} to {}", notes.join(" + "), dst.display()) })
 }
 
+// ---------- uninstall ----------
+
+/// Best-effort stop of the tray app and phone sessions that belong to this folder.
+pub fn stop_sessions(root: &Path) -> String {
+    #[cfg(windows)]
+    {
+        let r = root.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "Get-CimInstance Win32_Process | Where-Object {{ ($_.Name -eq 'pa-tray.exe' -and $_.ExecutablePath -like '{r}*') -or ($_.Name -eq 'claude.exe' -and $_.CommandLine -like '*--channels plugin:telegram*') }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $_.Name }}"
+        );
+        let mut c = Command::new("powershell");
+        c.args(["-NoProfile", "-Command", &script]);
+        return match cmd_output(c) {
+            Ok((_, out)) if !out.trim().is_empty() => format!("stopped: {}", out.split_whitespace().collect::<Vec<_>>().join(", ")),
+            _ => "nothing running".into(),
+        };
+    }
+    #[cfg(not(windows))]
+    {
+        let name = format!("pa-{}", proj_name(root));
+        let mut c = Command::new("tmux");
+        c.args(["kill-session", "-t", &name]);
+        let _ = cmd_output(c);
+        let mut k = Command::new("pkill");
+        k.args(["-f", &format!("{}/.pa/bin/pa-tray", root.to_string_lossy())]);
+        let _ = cmd_output(k);
+        "stopped tmux session and tray (if any)".into()
+    }
+}
+
+pub fn remove_trust(root: &Path) -> Result<bool, String> {
+    let mut v = read_claude_json()?;
+    let Some(projects) = v.get_mut("projects").and_then(|p| p.as_object_mut()) else { return Ok(false) };
+    let key = project_key(root);
+    let Some(entry) = projects.get_mut(&key).and_then(|e| e.as_object_mut()) else { return Ok(false) };
+    if entry.remove("hasTrustDialogAccepted").is_none() {
+        return Ok(false);
+    }
+    if entry.is_empty() {
+        projects.remove(&key);
+    }
+    let text = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+    let p = claude_json_path();
+    let tmp = p.with_extension("json.pa-tmp");
+    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &p).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+pub fn uninstall_plugin(root: &Path, id: &str) -> Result<(bool, String), String> {
+    if !plugin_enabled(root, id) {
+        return Ok((false, "not enabled for this project".into()));
+    }
+    let (ok, out) = run_claude(Some(root), &["plugin", "uninstall", id, "--scope", "project"])?;
+    if ok { Ok((true, out)) } else { Err(out) }
+}
+
+/// Remove the plugin-dir Telegram state only if it is this project's bot (same token).
+pub fn unsync_telegram_state(root: &Path) -> Result<String, String> {
+    let read_tok = |p: &Path| std::fs::read_to_string(p).ok().and_then(|t| t.lines().find_map(|l| l.strip_prefix("TELEGRAM_BOT_TOKEN=").map(|v| v.trim().to_string())));
+    let mine = read_tok(&root.join(".pa").join("telegram").join(".env"));
+    let dst = telegram_global_dir();
+    let theirs = read_tok(&dst.join(".env"));
+    match (mine, theirs) {
+        (Some(a), Some(b)) if a == b => {
+            let _ = std::fs::remove_file(dst.join(".env"));
+            let _ = std::fs::remove_file(dst.join("access.json"));
+            Ok(format!("removed this bot's token and allowlist from {}", dst.display()))
+        }
+        (_, None) => Ok("nothing in the plugin dir".into()),
+        _ => Ok("plugin dir holds a different bot, left alone".into()),
+    }
+}
+
 // ---------- Bun ----------
 
 pub fn install_bun() -> Result<String, String> {

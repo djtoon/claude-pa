@@ -15,6 +15,8 @@ pa-installer --port 47821 --no-browser
 pa-installer install DIR [--dry-run] [--persona fun] [--name Nova] [--signoff Dan] [--tz Asia/Jerusalem]
                          [--telegram-token T --telegram-chat C --telegram-user U] [--no-provision] [--no-autostart]
 pa-installer status DIR             # JSON: what is installed and working
+pa-installer uninstall DIR [--purge] # stop sessions, remove schedule + autostart, plugin scope, trust, plugin-dir
+                                    # Telegram state and launchers; --purge also deletes .pa/, .claude/, the CLAUDE.md block
 pa-installer list                   # bundled skills, agents, personalities
 ```
 

@@ -251,6 +251,11 @@ fn run_action(target: &str, what: &str, name: &str) -> Value {
             Ok(out) => json!({ "ok": true, "output": format!("tmux ready. {}", out.lines().last().unwrap_or("")) }),
             Err(e) => json!({ "ok": false, "output": e }),
         },
+        "uninstall" => {
+            let report = install::uninstall(target, name == "purge");
+            let text = report.steps.iter().map(|st| format!("[{}] {}{}", st.action, st.path, if st.note.is_empty() { String::new() } else { format!(": {}", st.note) })).collect::<Vec<_>>().join("\n");
+            json!({ "ok": report.ok, "output": text })
+        }
         "sync-telegram" => match provision::sync_telegram_state(&root) {
             Ok(msg) => json!({ "ok": true, "output": msg }),
             Err(e) => json!({ "ok": false, "output": e }),
@@ -327,7 +332,7 @@ struct Args {
 
 fn usage() {
     println!(
-        "pa-installer {}\n\nUsage:\n  pa-installer [--target DIR] [--port N] [--no-browser]\n      Launch the web installer (default).\n  pa-installer install DIR [--dry-run] [--no-overwrite] [--no-mcp] [--no-provision]\n                           [--persona ID] [--name NAME] [--signoff TEXT] [--tz ZONE]\n                           [--telegram-token T] [--telegram-chat C] [--telegram-user U]\n      Install from the command line with defaults (all skills, hooks, state, scripts, trust, plugins, schedule).\n  pa-installer status DIR\n      Show what is installed and working in DIR.\n  pa-installer list\n      Show the bundled skills, agents and personas.\n",
+        "pa-installer {}\n\nUsage:\n  pa-installer [--target DIR] [--port N] [--no-browser]\n      Launch the web installer (default).\n  pa-installer install DIR [--dry-run] [--no-overwrite] [--no-mcp] [--no-provision]\n                           [--persona ID] [--name NAME] [--signoff TEXT] [--tz ZONE]\n                           [--telegram-token T] [--telegram-chat C] [--telegram-user U]\n      Install from the command line with defaults (all skills, hooks, state, scripts, trust, plugins, schedule).\n  pa-installer status DIR\n      Show what is installed and working in DIR.\n  pa-installer uninstall DIR [--purge]\n      Remove sessions, schedule, autostart, plugin scope, trust and launchers; --purge also deletes .pa and .claude.\n  pa-installer list\n      Show the bundled skills, agents and personas.\n",
         pack::VERSION
     );
 }
@@ -381,6 +386,16 @@ fn parse_args() -> Result<Args, String> {
             }
             a.cli_install = Some(o);
             return Ok(a);
+        }
+        Some("uninstall") => {
+            let dir = argv.get(1).ok_or("uninstall needs a directory")?;
+            let purge = argv.iter().any(|a| a == "--purge");
+            let report = install::uninstall(dir, purge);
+            for st in &report.steps {
+                println!("{:<7} {}{}", st.action, st.path, if st.note.is_empty() { String::new() } else { format!("   ({})", st.note) });
+            }
+            println!("\nuninstalled{} -> {}", if purge { " (purged)" } else { "" }, report.target);
+            std::process::exit(if report.ok { 0 } else { 1 });
         }
         Some("status") => {
             let dir = argv.get(1).ok_or("status needs a directory")?;

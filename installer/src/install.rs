@@ -708,6 +708,110 @@ pub fn apply_telegram_user(path: &str, user_id: &str, chat_id: &str) -> Result<S
     Ok(format!("user {user_id} allowlisted (policy allowlist), chat id {chat_id} saved for pushes; {synced}"))
 }
 
+/// Undo everything the installer did outside the folder (sessions, schedule + autostart, plugin scope, trust,
+/// plugin-dir Telegram state) and remove the launchers and tray. With `purge`, also delete `.pa/`, `.claude/`,
+/// the CLAUDE.md block and the Atlassian entry, leaving the folder as it was.
+pub fn uninstall(path: &str, purge: bool) -> Report {
+    let root = normalize(path);
+    let mut f = Fs { root: root.clone(), dry: false, overwrite: true, steps: Vec::new() };
+    if !root.is_dir() {
+        f.label("folder", "error", "does not exist");
+        return finish_steps(&f.steps, root);
+    }
+    f.label("sessions", "ok", provision::stop_sessions(&root));
+    let sched = root.join(".pa").join("bin").join("pa-schedule.sh");
+    if sched.is_file() {
+        match provision::schedule_script(&root, "remove", false) {
+            Ok((true, out)) => f.label("schedule + autostart", "ok", out.lines().collect::<Vec<_>>().join(" | ")),
+            Ok((false, out)) => f.label("schedule + autostart", "error", out),
+            Err(e) => f.label("schedule + autostart", "error", e),
+        }
+    } else {
+        f.label("schedule + autostart", "skip", "no pa-schedule.sh here");
+    }
+    match provision::uninstall_plugin(&root, provision::TELEGRAM_PLUGIN) {
+        Ok((true, _)) => f.label("plugin telegram", "ok", "removed from this project"),
+        Ok((false, note)) => f.label("plugin telegram", "same", note),
+        Err(e) => f.label("plugin telegram", "error", e),
+    }
+    match provision::remove_trust(&root) {
+        Ok(true) => f.label("workspace trust", "ok", "entry removed from ~/.claude.json"),
+        Ok(false) => f.label("workspace trust", "same", "no entry"),
+        Err(e) => f.label("workspace trust", "error", e),
+    }
+    match provision::unsync_telegram_state(&root) {
+        Ok(msg) => f.label("telegram (plugin dir)", "ok", msg),
+        Err(e) => f.label("telegram (plugin dir)", "error", e),
+    }
+    let mut removed = 0;
+    for name in ["pa", "pa.cmd", "claude.cmd", "pa-tray", "pa-tray.cmd"] {
+        let p = root.join(name);
+        if p.is_file() && fs::remove_file(&p).is_ok() {
+            removed += 1;
+        }
+    }
+    let tray = root.join(".pa").join("bin").join(pack::TRAY_NAME.trim());
+    if tray.is_file() {
+        match fs::remove_file(&tray) {
+            Ok(_) => removed += 1,
+            Err(e) => f.label("tray app", "error", format!("could not delete (still running?): {e}")),
+        }
+    }
+    f.label("launchers + tray", "ok", format!("{removed} files removed"));
+
+    if purge {
+        for d in [".pa", ".claude"] {
+            let p = root.join(d);
+            if p.is_dir() {
+                match fs::remove_dir_all(&p) {
+                    Ok(_) => f.label(d, "ok", "deleted"),
+                    Err(e) => f.label(d, "error", e.to_string()),
+                }
+            }
+        }
+        let cm = root.join("CLAUDE.md");
+        if let Some(text) = read_opt(&cm) {
+            let text = norm(&text);
+            if let Some(start) = text.find(MARK_START) {
+                let end = text[start..].find(MARK_END).map(|i| start + i + MARK_END.len()).unwrap_or(text.len());
+                let rest = format!("{}{}", &text[..start], &text[end..]).trim().to_string();
+                let empty = rest.is_empty();
+                let r = if empty { fs::remove_file(&cm) } else { fs::write(&cm, format!("{rest}\n")) };
+                match r {
+                    Ok(_) => f.label("CLAUDE.md", "ok", if empty { "deleted" } else { "pa block removed" }),
+                    Err(e) => f.label("CLAUDE.md", "error", e.to_string()),
+                }
+            }
+        }
+        let mcp = root.join(".mcp.json");
+        if let Some(text) = read_opt(&mcp) {
+            if let Ok(mut v) = serde_json::from_str::<Value>(&text) {
+                let left = v.get_mut("mcpServers").and_then(|s| s.as_object_mut()).map(|s| {
+                    s.remove("atlassian");
+                    s.len()
+                });
+                let r = match left {
+                    Some(0) => fs::remove_file(&mcp),
+                    _ => fs::write(&mcp, serde_json::to_string_pretty(&v).unwrap_or_default() + "\n"),
+                };
+                if r.is_ok() {
+                    f.label(".mcp.json", "ok", if left == Some(0) { "deleted" } else { "atlassian entry removed" });
+                }
+            }
+        }
+    }
+    finish_steps(&f.steps, root)
+}
+
+fn finish_steps(steps: &[Step], root: PathBuf) -> Report {
+    let mut counts = BTreeMap::new();
+    for s in steps {
+        *counts.entry(s.action.clone()).or_insert(0) += 1;
+    }
+    let ok = !steps.iter().any(|s| s.action == "error");
+    Report { ok, dry_run: false, target: root.to_string_lossy().to_string(), steps: steps.to_vec(), counts }
+}
+
 /// Bot token of an existing install, from .pa/telegram/.env.
 pub fn stored_token(path: &str) -> Option<String> {
     let p = normalize(path).join(".pa").join("telegram").join(".env");
