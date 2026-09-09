@@ -51,6 +51,23 @@ autostart on Linux). The SessionStart hook tells the assistant that the channel 
 
 The bot answers only while a session is running. Scheduled pushes do not need one.
 
+**Where the plugin reads its state.** Claude Code does not pass `settings.json` `env` to MCP server
+processes, so the Telegram plugin ignores `TELEGRAM_STATE_DIR` and reads `~/.claude/channels/telegram/`.
+The installer therefore mirrors the token and allowlist from `.pa/telegram/` into that directory (and
+`Detect me now` / `pa-telegram-chatid.sh` keep both in sync). The project copy stays the source of truth.
+
+**Bun must be the real runtime.** Claude spawns `bun` as a plain process; the npm package's `bun` / `bun.cmd`
+shims cannot be spawned that way and the server dies with "Connection closed". The installer only accepts a
+real `bun.exe` / `bun` binary (official installer, `~/.bun/bin`) and every launcher puts `~/.bun/bin` and
+`~/.local/bin` first on PATH.
+
+## Clean machine
+
+With "Install what is missing" on (default), the installer brings the prerequisites itself, using the official
+installers only: Claude Code (`claude.ai/install`), Git for Windows via winget (bash for hooks and scripts),
+the Bun runtime (`bun.sh`), tmux on macOS (Homebrew) / Linux (apt, dnf or pacman when passwordless sudo works,
+otherwise it prints the command). The Done board shows each one with an install button, plus Sign in.
+
 ## Services
 
 Gmail, Google Calendar, Google Drive and Slack are **claude.ai connectors** (claude.ai → Settings →

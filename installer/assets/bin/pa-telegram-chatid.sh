@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Discover your Telegram user/chat id after you send the bot one message.
-# Saves TELEGRAM_CHAT_ID to .pa/.env (for notify.sh) and allowlists you in .pa/telegram/access.json (for the channel plugin).
+# Saves TELEGRAM_CHAT_ID to .pa/.env (for notify.sh) and allowlists you for the channel plugin in BOTH
+# .pa/telegram/access.json (project copy) and ~/.claude/channels/telegram/access.json (what the plugin reads).
 BIN="$(cd "$(dirname "$0")" && pwd)"; PA="$(dirname "$BIN")"
+GLOBAL="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/channels/telegram"
 set -a
-[ -f "$HOME/.claude/channels/telegram/.env" ] && . "$HOME/.claude/channels/telegram/.env"
-[ -f "$PA/telegram/.env" ] && . "$PA/telegram/.env"
 [ -f "$PA/.env" ] && . "$PA/.env"
+[ -f "$GLOBAL/.env" ] && . "$GLOBAL/.env"
+[ -f "$PA/telegram/.env" ] && . "$PA/telegram/.env"
 set +a
 [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || { echo "No bot token. Put TELEGRAM_BOT_TOKEN=... in $PA/telegram/.env (the installer does this) or run /telegram:configure <token>."; exit 1; }
 RAW=$(curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getUpdates")
@@ -22,15 +24,13 @@ else
   echo "TELEGRAM_CHAT_ID=$ID" >> "$PA/.env"
 fi
 echo "Saved TELEGRAM_CHAT_ID=$ID to $PA/.env"
-# Allowlist the same user for the channel plugin so no pairing code is needed.
-mkdir -p "$PA/telegram"
-ACC="$PA/telegram/access.json"
-if command -v jq >/dev/null 2>&1; then
-  [ -f "$ACC" ] || echo '{"dmPolicy":"allowlist","allowFrom":[]}' > "$ACC"
-  jq --arg id "$ID" '.dmPolicy="allowlist" | .allowFrom=((.allowFrom // []) + [$id] | unique)' "$ACC" > "$ACC.tmp" && mv "$ACC.tmp" "$ACC"
-  echo "Allowlisted user $ID in $ACC"
-elif command -v python3 >/dev/null 2>&1; then
-  python3 - "$ACC" "$ID" <<'PY'
+allowlist() {  # $1 = access.json path
+  local ACC="$1"; mkdir -p "$(dirname "$ACC")"
+  if command -v jq >/dev/null 2>&1; then
+    [ -f "$ACC" ] || echo '{"dmPolicy":"allowlist","allowFrom":[]}' > "$ACC"
+    jq --arg id "$ID" '.dmPolicy="allowlist" | .allowFrom=((.allowFrom // []) + [$id] | unique)' "$ACC" > "$ACC.tmp" && mv "$ACC.tmp" "$ACC"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "$ACC" "$ID" <<'PY'
 import json,sys,os
 p,uid=sys.argv[1],sys.argv[2]
 d=json.load(open(p,encoding="utf-8")) if os.path.exists(p) else {}
@@ -38,7 +38,12 @@ d["dmPolicy"]="allowlist"; a=d.get("allowFrom") or []
 if uid not in a: a.append(uid)
 d["allowFrom"]=a
 json.dump(d,open(p,"w",encoding="utf-8"),indent=2)
-print(f"Allowlisted user {uid} in {p}")
 PY
-fi
+  fi
+  echo "Allowlisted user $ID in $ACC"
+}
+allowlist "$PA/telegram/access.json"
+allowlist "$GLOBAL/access.json"
+# The plugin reads its token from the global dir too; keep it in sync with the project copy.
+[ -f "$PA/telegram/.env" ] && cp "$PA/telegram/.env" "$GLOBAL/.env"
 bash "$BIN/notify.sh" "✅ PA notifications connected."

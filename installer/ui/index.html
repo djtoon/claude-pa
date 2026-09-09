@@ -426,7 +426,7 @@ let info = null;
 const state = {
   persona: 'serious', workdays: new Set([0, 1, 2, 3, 4]), skills: new Set(),
   toggles: { hooks: true, mcp: true, claude_md: true, state: true, scripts: true, agents: true, overwrite: true },
-  auto: { auto_trust: true, auto_plugins: true, auto_bun: true, auto_schedule: true, autostart: true },
+  auto: { auto_prereqs: true, auto_trust: true, auto_plugins: true, auto_bun: true, auto_schedule: true, autostart: true },
   bot: null,
 };
 let current = 0;
@@ -564,6 +564,7 @@ const TOGGLES = [
   ['overwrite', 'Overwrite pack-managed files', 'Replace skills, agents, hooks, scripts and launchers that already exist with this version. Your state files are never touched either way.'],
 ];
 const AUTO = [
+  ['auto_prereqs', 'Install what is missing', 'Claude Code (official installer), Git for Windows (bash for hooks and scripts), the real Bun runtime, tmux on macOS/Linux. Official installers only; nothing else is touched.'],
   ['auto_trust', 'Mark the folder trusted', 'Writes one line for this folder into ~/.claude.json so Claude Code skips the trust dialog and applies the .pa/ permission rules immediately.'],
   ['auto_plugins', 'Install the Telegram channel plugin', 'Registers the official marketplace and runs claude plugin install telegram@claude-plugins-official --scope project.'],
   ['auto_bun', 'Install Bun if missing', 'The Telegram channel server runs on Bun. Uses the official installer (bun.sh).'],
@@ -744,13 +745,16 @@ async function refreshStatus() {
     const s = await api('/api/status?target=' + encodeURIComponent(targetEl.value.trim()));
     const rows = [];
     rows.push(srow(s.installed, 'Files', s.installed ? `${s.skills} skills, hooks ${s.hooks ? 'on' : 'missing'}, CLAUDE.md ${s.claude_md ? 'has the pa block' : 'missing the pa block'}` : 'not installed', ''));
-    rows.push(srow(!!s.claude, 'Claude Code CLI', s.claude ? esc(s.claude) : 'not found on PATH', '', s.claude ? 'ok' : 'err'));
+    rows.push(srow(!!s.claude, 'Claude Code CLI', s.claude ? esc(s.claude) : 'not installed', s.claude ? '' : act('install-claude', 'Install Claude Code'), s.claude ? 'ok' : 'err'));
+    if (info.os === 'windows') rows.push(srow(!!s.bash, 'Git Bash', s.bash ? esc(s.bash) : 'missing: the hooks and .pa/bin scripts need it', s.bash ? '' : act('install-git', 'Install Git for Windows'), s.bash ? 'ok' : 'err'));
+    else rows.push(srow(!!s.tmux, 'tmux', s.tmux ? 'installed (background session for the tray app)' : 'missing', s.tmux ? '' : act('install-tmux', 'Install tmux')));
     rows.push(srow(s.auth.logged_in, 'Signed in', s.auth.logged_in ? `${esc(s.auth.email || '')} (${esc(s.auth.method || '')})` : 'not signed in: channels and connectors need a claude.ai login', s.auth.logged_in ? '' : act('login', 'Sign in')));
     rows.push(srow(s.trusted, 'Workspace trusted', s.trusted ? 'no trust dialog, .pa/ permission rules active' : 'Claude Code will ask on first start and ignore the .pa/ rules until then', s.trusted ? '' : act('trust', 'Trust now')));
     rows.push(srow(s.plugin, 'Telegram channel plugin', s.plugin ? 'enabled for this project' : (s.marketplace ? 'marketplace registered, plugin not installed' : 'not installed'), s.plugin ? '' : act('plugins', 'Install')));
-    rows.push(srow(!!s.bun, 'Bun', s.bun ? esc(s.bun) : 'missing: the Telegram server needs it', s.bun ? '' : act('bun', 'Install Bun')));
+    rows.push(srow(!!s.bun, 'Bun runtime', s.bun ? esc(s.bun) : 'missing: the Telegram server needs the real bun.exe (an npm shim is not enough)', s.bun ? '' : act('bun', 'Install Bun')));
     rows.push(srow(s.telegram_token, 'Telegram bot token', s.telegram_token ? '.pa/telegram/.env' : 'none: paste it in Setup, or run /telegram:configure <token> inside claude', s.telegram_token ? '' : `<button class="btn small" onclick="go(2)">Setup</button>`));
     const detectBtn = s.telegram_token ? act('detect', 'Detect me now') : `<button class="btn small" onclick="go(2)">Setup</button>`;
+    if (s.telegram_token) rows.push(srow(s.telegram_global, 'Telegram plugin dir', s.telegram_global ? `token + allowlist mirrored to ${esc(s.telegram_global_dir)} (what the plugin reads)` : 'token not in the plugin dir yet: the bot cannot start', s.telegram_global ? '' : act('sync-telegram', 'Sync now')));
     rows.push(srow(s.telegram_users > 0, 'Telegram access', s.telegram_users > 0 ? `${s.telegram_users} allowlisted, policy ${esc(s.telegram_policy)}` : `policy ${esc(s.telegram_policy)}: send the bot one message, then click Detect me now (no pairing code)`, s.telegram_users > 0 ? '' : detectBtn, s.telegram_users > 0 ? 'ok' : 'bad'));
     rows.push(srow(s.chat_id, 'Push chat id', s.chat_id ? 'scheduled jobs will push to your phone' : 'not set: jobs print instead of pushing', s.chat_id ? '' : detectBtn, s.chat_id ? 'ok' : 'info'));
     rows.push(srow(s.tray, 'Tray app', s.tray ? 'installed: .pa/bin/pa-tray keeps the phone session running in the background' : 'not in this installer build', s.tray ? act('tray', 'Start') : '', s.tray ? 'ok' : 'info'));
@@ -808,7 +812,7 @@ async function runAction(what) {
   try {
     const r = await post('/api/run', { target: targetEl.value.trim(), what });
     out.textContent = (r.ok ? '' : '[failed] ') + (r.output || '(no output)');
-    if (['trust', 'plugins', 'bun', 'schedule', 'schedule-remove', 'login', 'detect'].includes(what)) setTimeout(refreshStatus, 800);
+    if (['trust', 'plugins', 'bun', 'schedule', 'schedule-remove', 'login', 'detect', 'install-claude', 'install-git', 'install-tmux', 'sync-telegram'].includes(what)) setTimeout(refreshStatus, 800);
   } catch (e) { out.textContent = e.message; }
 }
 async function runJob(what) {

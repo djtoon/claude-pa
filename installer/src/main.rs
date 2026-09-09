@@ -239,6 +239,22 @@ fn run_action(target: &str, what: &str, name: &str) -> Value {
             let p = if m.is_ok() { provision::install_plugin(&root, provision::TELEGRAM_PLUGIN) } else { Err("marketplace failed".into()) };
             json!({ "ok": m.is_ok() && p.is_ok(), "output": format!("marketplace: {}\nplugin: {}", fmt(m), fmt(p)) })
         }
+        "install-claude" => match provision::install_claude() {
+            Ok(_) => json!({ "ok": true, "output": "Claude Code installed to ~/.local/bin. Next: Sign in." }),
+            Err(e) => json!({ "ok": false, "output": e }),
+        },
+        "install-git" => match provision::install_git_windows() {
+            Ok(_) => json!({ "ok": true, "output": "Git for Windows installed (provides bash for the hooks and scripts). Open a new terminal for PATH to update." }),
+            Err(e) => json!({ "ok": false, "output": e }),
+        },
+        "install-tmux" => match provision::install_tmux() {
+            Ok(out) => json!({ "ok": true, "output": format!("tmux ready. {}", out.lines().last().unwrap_or("")) }),
+            Err(e) => json!({ "ok": false, "output": e }),
+        },
+        "sync-telegram" => match provision::sync_telegram_state(&root) {
+            Ok(msg) => json!({ "ok": true, "output": msg }),
+            Err(e) => json!({ "ok": false, "output": e }),
+        },
         "bun" => match provision::install_bun() {
             Ok(out) => json!({ "ok": true, "output": format!("Bun installed.\n{}", out.lines().rev().take(3).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n")) }),
             Err(e) => json!({ "ok": false, "output": e }),
@@ -335,6 +351,7 @@ fn parse_args() -> Result<Args, String> {
                     "--no-overwrite" => o.overwrite = false,
                     "--no-mcp" => o.mcp = false,
                     "--no-provision" => {
+                        o.auto_prereqs = false;
                         o.auto_trust = false;
                         o.auto_plugins = false;
                         o.auto_bun = false;

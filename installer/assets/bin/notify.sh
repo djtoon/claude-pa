@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Push a message to your phone via the same Telegram bot the channel plugin uses.
 # Usage: notify.sh "text"   or   echo "text" | notify.sh
-# Token comes from .pa/telegram/.env (project-local channel state) or ~/.claude/channels/telegram/.env;
-# TELEGRAM_CHAT_ID from .pa/.env (written by the installer or pa-telegram-chatid.sh).
+# Token: .pa/telegram/.env (project) wins, then ~/.claude/channels/telegram/.env (the plugin's own dir).
+# TELEGRAM_CHAT_ID: .pa/.env (written by the installer or pa-telegram-chatid.sh).
 BIN="$(cd "$(dirname "$0")" && pwd)"; PA="$(dirname "$BIN")"
 set -a
+[ -f "$PA/.env" ] && . "$PA/.env"
 [ -f "$HOME/.claude/channels/telegram/.env" ] && . "$HOME/.claude/channels/telegram/.env"
 [ -f "$PA/telegram/.env" ] && . "$PA/telegram/.env"
-[ -f "$PA/.env" ] && . "$PA/.env"
 set +a
 if [ $# -gt 0 ]; then MSG="$*"; else MSG="$(cat)"; fi
 [ -z "$MSG" ] && exit 0

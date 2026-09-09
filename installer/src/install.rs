@@ -37,6 +37,8 @@ pub struct Options {
     pub telegram_user_id: String,
     /// Provisioning switches: mark the folder trusted, install the Telegram plugin, install Bun,
     /// install the proactive schedule, start the phone session at login.
+    /// Install missing prerequisites (Claude Code, Git Bash on Windows, real Bun, tmux) with their official installers.
+    pub auto_prereqs: bool,
     pub auto_trust: bool,
     pub auto_plugins: bool,
     pub auto_bun: bool,
@@ -68,6 +70,7 @@ impl Default for Options {
             telegram_token: String::new(),
             telegram_chat_id: String::new(),
             telegram_user_id: String::new(),
+            auto_prereqs: true,
             auto_trust: true,
             auto_plugins: true,
             auto_bun: true,
@@ -633,6 +636,19 @@ pub fn run(o: &Options) -> Report {
             }
             Err(e) => f.step(&access, "error", e),
         }
+        // Claude Code does not hand settings.json env to MCP servers, so the plugin reads ~/.claude/channels/telegram.
+        // Mirror the token and allowlist there; the project copy stays the source of truth.
+        let has_token = !o.telegram_token.trim().is_empty() || read_opt(&tg_dir.join(".env")).map(|t| t.contains("TELEGRAM_BOT_TOKEN=")).unwrap_or(false);
+        if has_token {
+            if o.dry_run {
+                f.label("telegram (plugin dir)", "todo", format!("copy token + allowlist to {} (what the channel plugin reads)", provision::telegram_global_dir().display()));
+            } else {
+                match provision::sync_telegram_state(&root) {
+                    Ok(msg) => f.label("telegram (plugin dir)", if msg.starts_with("already") { "same" } else { "ok" }, msg),
+                    Err(err) => f.label("telegram (plugin dir)", "error", err),
+                }
+            }
+        }
     }
 
     if o.scripts {
@@ -688,7 +704,8 @@ pub fn apply_telegram_user(path: &str, user_id: &str, chat_id: &str) -> Result<S
     let env_path = pa.join(".env");
     let env = merge_env(read_opt(&env_path), &[("TELEGRAM_CHAT_ID", chat_id)]);
     fs::write(&env_path, env).map_err(|e| e.to_string())?;
-    Ok(format!("user {user_id} allowlisted (policy allowlist), chat id {chat_id} saved for pushes"))
+    let synced = provision::sync_telegram_state(&root).unwrap_or_else(|e| format!("plugin dir not synced: {e}"));
+    Ok(format!("user {user_id} allowlisted (policy allowlist), chat id {chat_id} saved for pushes; {synced}"))
 }
 
 /// Bot token of an existing install, from .pa/telegram/.env.
@@ -700,6 +717,40 @@ pub fn stored_token(path: &str) -> Option<String> {
 /// Post-file steps. In a dry run they are listed as `todo`.
 fn provision(f: &mut Fs, o: &Options, root: &Path) {
     let dry = o.dry_run;
+    if o.auto_prereqs {
+        // Claude Code itself (everything else needs it).
+        if provision::claude_bin().is_some() {
+            f.label("claude code", "same", "installed");
+        } else if dry {
+            f.label("claude code", "todo", "install Claude Code with the official installer (claude.ai/install)");
+        } else {
+            match provision::install_claude() {
+                Ok(_) => f.label("claude code", "ok", "installed to ~/.local/bin (sign in from the Done page)"),
+                Err(e) => f.label("claude code", "error", e),
+            }
+        }
+        if cfg!(windows) {
+            if provision::find_bash().is_some() {
+                f.label("git bash", "same", "installed");
+            } else if dry {
+                f.label("git bash", "todo", "install Git for Windows with winget (bash for the hooks and scripts)");
+            } else {
+                match provision::install_git_windows() {
+                    Ok(_) => f.label("git bash", "ok", "Git for Windows installed"),
+                    Err(e) => f.label("git bash", "error", e),
+                }
+            }
+        } else if provision::which("tmux").is_some() {
+            f.label("tmux", "same", "installed");
+        } else if dry {
+            f.label("tmux", "todo", "install tmux (background session for the tray app)");
+        } else {
+            match provision::install_tmux() {
+                Ok(_) => f.label("tmux", "ok", "installed"),
+                Err(e) => f.label("tmux", "error", e),
+            }
+        }
+    }
     if o.auto_trust {
         if dry {
             let already = provision::is_trusted(root);
@@ -736,10 +787,10 @@ fn provision(f: &mut Fs, o: &Options, root: &Path) {
         }
     }
     if o.auto_bun {
-        if provision::bun_bin().is_some() {
-            f.label("bun", "same", "already installed");
+        if let Some(b) = provision::bun_bin() {
+            f.label("bun", "same", format!("real runtime at {}", b.display()));
         } else if dry {
-            f.label("bun", "todo", "install Bun (the Telegram channel runs on it)");
+            f.label("bun", "todo", "install the real Bun runtime with the official installer (npm shims cannot be spawned by Claude)");
         } else {
             match provision::install_bun() {
                 Ok(_) => f.label("bun", "ok", "installed; new terminals pick it up from PATH"),
@@ -822,5 +873,8 @@ pub fn status(path: &str) -> Value {
         "auth": provision::auth_status(),
         "claude": provision::claude_bin().map(|p| p.to_string_lossy().to_string()),
         "bash": provision::find_bash().map(|p| p.to_string_lossy().to_string()),
+        "tmux": provision::which("tmux").is_some(),
+        "telegram_global": read_opt(&provision::telegram_global_dir().join(".env")).map(|t| t.lines().any(|l| l.starts_with("TELEGRAM_BOT_TOKEN=") && l.len() > 20)).unwrap_or(false),
+        "telegram_global_dir": provision::telegram_global_dir().to_string_lossy(),
     })
 }

@@ -88,11 +88,25 @@ pub fn claude_bin() -> Option<PathBuf> {
     })
 }
 
+/// The Telegram channel server is spawned as a plain process by Claude Code, so on Windows only a real
+/// `bun.exe` counts; the npm shims (`bun`, `bun.cmd`) cannot be spawned that way and make the server die.
 pub fn bun_bin() -> Option<PathBuf> {
-    which("bun").or_else(|| {
-        let p = home_dir().join(".bun").join("bin").join(exe("bun"));
-        p.is_file().then_some(p)
-    })
+    let official = home_dir().join(".bun").join("bin").join(exe("bun"));
+    if official.is_file() {
+        return Some(official);
+    }
+    let found = which("bun")?;
+    if cfg!(windows) && !found.to_string_lossy().to_lowercase().ends_with(".exe") {
+        return None;
+    }
+    Some(found)
+}
+
+/// Directory the Telegram channel plugin actually reads (Claude Code does not pass settings.json env to
+/// MCP servers, so TELEGRAM_STATE_DIR never reaches it): ~/.claude/channels/telegram.
+pub fn telegram_global_dir() -> PathBuf {
+    let cfg = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home_dir().join(".claude"));
+    cfg.join("channels").join("telegram")
 }
 
 fn cmd_output(mut c: Command) -> Result<(bool, String), String> {
@@ -215,6 +229,123 @@ pub fn install_plugin(root: &Path, id: &str) -> Result<(bool, String), String> {
     }
     let (ok, out) = run_claude(Some(root), &["plugin", "install", id, "--scope", "project", "-y"])?;
     if ok { Ok((true, out)) } else { Err(out) }
+}
+
+// ---------- prerequisites for a clean machine ----------
+
+/// Claude Code itself, via the official installer (lands in ~/.local/bin).
+pub fn install_claude() -> Result<String, String> {
+    let c = if cfg!(windows) {
+        let mut c = Command::new("powershell");
+        c.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "irm https://claude.ai/install.ps1 | iex"]);
+        c
+    } else {
+        let mut c = Command::new("bash");
+        c.args(["-c", "curl -fsSL https://claude.ai/install.sh | bash"]);
+        c
+    };
+    let (ok, out) = cmd_output(c)?;
+    if ok && claude_bin().is_some() {
+        Ok(out)
+    } else {
+        Err(format!("Claude Code install did not complete:\n{out}"))
+    }
+}
+
+/// Git for Windows (provides the bash the hooks and scripts run with). winget is present on Windows 10/11.
+pub fn install_git_windows() -> Result<String, String> {
+    if !cfg!(windows) {
+        return Err("only needed on Windows".into());
+    }
+    let mut c = Command::new("winget");
+    c.args(["install", "--id", "Git.Git", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements"]);
+    let (ok, out) = cmd_output(c).map_err(|e| format!("winget not available ({e}); install Git for Windows from https://git-scm.com/download/win"))?;
+    if ok || find_bash().is_some() {
+        Ok(out)
+    } else {
+        Err(format!("winget could not install Git:\n{out}\nInstall it from https://git-scm.com/download/win"))
+    }
+}
+
+/// tmux for the background session on macOS/Linux. Homebrew on macOS; apt/dnf need sudo, so we only try
+/// when a passwordless sudo works and otherwise report the command.
+pub fn install_tmux() -> Result<String, String> {
+    if cfg!(windows) {
+        return Err("not needed on Windows".into());
+    }
+    if which("tmux").is_some() {
+        return Ok("already installed".into());
+    }
+    if cfg!(target_os = "macos") {
+        if which("brew").is_none() {
+            return Err("Homebrew not found: install it from https://brew.sh then run: brew install tmux".into());
+        }
+        let mut c = Command::new("brew");
+        c.args(["install", "tmux"]);
+        let (ok, out) = cmd_output(c)?;
+        return if ok { Ok(out) } else { Err(out) };
+    }
+    let pkg = if which("apt-get").is_some() { "apt-get install -y tmux" } else if which("dnf").is_some() { "dnf install -y tmux" } else if which("pacman").is_some() { "pacman -S --noconfirm tmux" } else { "" };
+    if pkg.is_empty() {
+        return Err("no known package manager; install tmux with your distribution's tools".into());
+    }
+    let mut c = Command::new("sudo");
+    c.args(["-n", "sh", "-c", pkg]);
+    match cmd_output(c) {
+        Ok((true, out)) => Ok(out),
+        _ => Err(format!("needs a password. Run in a terminal:  sudo {pkg}")),
+    }
+}
+
+/// Mirror the project's Telegram state into the plugin's own directory (token replaced, allowlist merged).
+/// Returns a short note of what changed.
+pub fn sync_telegram_state(root: &Path) -> Result<String, String> {
+    let src = root.join(".pa").join("telegram");
+    let dst = telegram_global_dir();
+    let mut notes = Vec::new();
+    let token = std::fs::read_to_string(src.join(".env"))
+        .ok()
+        .and_then(|t| t.lines().find_map(|l| l.strip_prefix("TELEGRAM_BOT_TOKEN=").map(|v| v.trim().to_string())))
+        .filter(|t| !t.is_empty());
+    if token.is_none() && !src.join("access.json").is_file() {
+        return Ok("nothing to sync".into());
+    }
+    std::fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
+    if let Some(tok) = token {
+        let env_path = dst.join(".env");
+        let existing = std::fs::read_to_string(&env_path).unwrap_or_default();
+        let mut lines: Vec<String> = existing.lines().filter(|l| !l.starts_with("TELEGRAM_BOT_TOKEN=")).map(|l| l.to_string()).collect();
+        lines.push(format!("TELEGRAM_BOT_TOKEN={tok}"));
+        let text = lines.join("\n") + "\n";
+        if text != existing {
+            std::fs::write(&env_path, text).map_err(|e| e.to_string())?;
+            notes.push("token".to_string());
+        }
+    }
+    if let Ok(src_text) = std::fs::read_to_string(src.join("access.json")) {
+        let src_v: Value = serde_json::from_str(&src_text).map_err(|e| format!("project access.json invalid: {e}"))?;
+        let dst_path = dst.join("access.json");
+        let mut dst_v: Value = std::fs::read_to_string(&dst_path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(json!({}));
+        let before = dst_v.to_string();
+        let dobj = dst_v.as_object_mut().ok_or("global access.json is not an object")?;
+        if let Some(policy) = src_v.get("dmPolicy") {
+            dobj.insert("dmPolicy".into(), policy.clone());
+        }
+        let mut allow: Vec<Value> = dobj.get("allowFrom").and_then(|a| a.as_array()).cloned().unwrap_or_default();
+        for id in src_v.get("allowFrom").and_then(|a| a.as_array()).cloned().unwrap_or_default() {
+            if !allow.contains(&id) {
+                allow.push(id);
+            }
+        }
+        dobj.insert("allowFrom".into(), Value::Array(allow));
+        if dst_v.to_string() != before || !dst_path.is_file() {
+            let mut text = serde_json::to_string_pretty(&dst_v).map_err(|e| e.to_string())?;
+            text.push('\n');
+            std::fs::write(&dst_path, text).map_err(|e| e.to_string())?;
+            notes.push("allowlist".to_string());
+        }
+    }
+    Ok(if notes.is_empty() { "already in sync".into() } else { format!("synced {} to {}", notes.join(" + "), dst.display()) })
 }
 
 // ---------- Bun ----------

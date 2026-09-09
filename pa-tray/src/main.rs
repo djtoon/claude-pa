@@ -43,6 +43,21 @@ fn claude_bin() -> Option<PathBuf> {
     })
 }
 
+/// PATH for the session: the real Bun (Telegram server) and Claude live in the user profile and may not be on
+/// the login shell's PATH yet (fresh install, autostart at login).
+fn session_path() -> std::ffi::OsString {
+    let home = home_dir();
+    let mut dirs = vec![home.join(".bun").join("bin"), home.join(".local").join("bin")];
+    if !cfg!(windows) {
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        dirs.push(PathBuf::from("/usr/local/bin"));
+    }
+    if let Some(cur) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&cur));
+    }
+    std::env::join_paths(dirs).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+}
+
 /// `<root>/.pa/bin/pa-tray` → `<root>`; falls back to the current directory (or its parent chain) that has `.pa`.
 fn root_dir() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
@@ -181,7 +196,7 @@ impl Session {
             if resume {
                 c.arg("-c");
             }
-            c.current_dir(&self.root).env_remove("CLAUDECODE");
+            c.current_dir(&self.root).env_remove("CLAUDECODE").env("PATH", session_path());
             c.creation_flags(if visible { CREATE_NEW_CONSOLE } else { CREATE_NO_WINDOW });
             let child = c.spawn().map_err(|e| format!("cannot start claude: {e}"))?;
             log(&self.root, &format!("started claude pid {} ({})", child.id(), if visible { "visible" } else { "hidden" }));
@@ -196,6 +211,7 @@ impl Session {
             let st = Command::new("tmux")
                 .args(["new-session", "-d", "-s", &name, "-c", &self.root.to_string_lossy(), &cmd])
                 .env_remove("CLAUDECODE")
+                .env("PATH", session_path())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
