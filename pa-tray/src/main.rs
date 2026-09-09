@@ -101,6 +101,36 @@ fn log(root: &Path, line: &str) {
     }
 }
 
+/// Single instance per folder: hold a loopback port derived from the folder path for the life of the process.
+/// A second pa-tray for the same folder cannot bind it and exits. Released automatically on exit or crash.
+fn instance_lock(root: &Path) -> Option<std::net::TcpListener> {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let key = root.to_string_lossy().to_string();
+    if cfg!(windows) { key.to_lowercase().hash(&mut h) } else { key.hash(&mut h) }
+    let port = 49152 + (h.finish() % 16000) as u16;
+    std::net::TcpListener::bind(("127.0.0.1", port)).ok()
+}
+
+/// PIDs of phone sessions (`claude --channels plugin:telegram…`) running on this machine, ours included.
+fn phone_session_pids() -> Vec<u32> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let out = Command::new("powershell")
+            .args(["-NoProfile", "-Command", "Get-CimInstance Win32_Process -Filter \"Name='claude.exe'\" | Where-Object { $_.CommandLine -like '*--channels plugin:telegram*' } | ForEach-Object { $_.ProcessId }"])
+            .creation_flags(0x0800_0000)
+            .stdin(Stdio::null())
+            .output();
+        return out.map(|o| String::from_utf8_lossy(&o.stdout).lines().filter_map(|l| l.trim().parse().ok()).collect()).unwrap_or_default();
+    }
+    #[cfg(not(windows))]
+    {
+        let out = Command::new("pgrep").args(["-f", "claude.*--channels plugin:telegram"]).stdin(Stdio::null()).output();
+        out.map(|o| String::from_utf8_lossy(&o.stdout).lines().filter_map(|l| l.trim().parse().ok()).collect()).unwrap_or_default()
+    }
+}
+
 fn session_name(root: &Path) -> String {
     let base = root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     format!("pa-{}", base.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '-' }).collect::<String>())
@@ -292,6 +322,17 @@ impl Session {
             return Ok(());
         }
         let claude = claude_bin().ok_or("claude CLI not found (install Claude Code)")?;
+        // One phone session per machine: a second one would fight the first over the Telegram bot.
+        // (Re-check once after a pause: right after show/hide the old process may still be winding down.)
+        let mut others = phone_session_pids();
+        if !others.is_empty() {
+            std::thread::sleep(Duration::from_millis(1500));
+            others = phone_session_pids();
+        }
+        if !others.is_empty() {
+            log(&self.root, &format!("not starting: a phone session is already running (pid {:?}), probably a pa window or another tray", others));
+            return Err(format!("a phone session is already running (pid {}); close it first", others[0]));
+        }
         if clear_failure_cache() {
             log(&self.root, "cleared Claude's cached Telegram failure");
         }
@@ -617,6 +658,14 @@ fn main() {
         std::process::exit(guard::run(&root));
     }
     let root = root_dir();
+    // Only one tray per folder; a second launch just exits (the first one keeps the port until it quits).
+    let _instance = match instance_lock(&root) {
+        Some(lock) => lock,
+        None => {
+            log(&root, "another pa-tray is already running for this folder; exiting");
+            return;
+        }
+    };
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().expect("event loop");
     let proxy = event_loop.create_proxy();
     MenuEvent::set_event_handler(Some(move |e| {

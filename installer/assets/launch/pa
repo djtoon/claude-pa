@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Start the assistant with the phone channel. Plain `claude` has no Telegram; this adds the flag every time.
-# Usage: ./pa            new session
-#        ./pa -c         continue the last session
+# Usage: ./pa            continue the last conversation (a fresh one starts when there is none)
 #        ./pa <args...>  any other claude arguments
 cd "$(dirname "$0")" || exit 1
 export PATH="$HOME/.bun/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+# One phone session per machine: a second one fights the first over the Telegram bot.
+if pgrep -f "claude.*--channels plugin:telegram" >/dev/null 2>&1; then
+  echo "[pa] A phone session is already running (the tray app, or another pa window)."
+  echo "[pa] Two sessions fight over the Telegram bot. Use the tray icon's 'Open session in a terminal' instead."
+  read -r -p "[pa] Start a second session anyway? [y/N] " yn
+  case "$yn" in y|Y) ;; *) exit 0 ;; esac
+fi
 # Forget Claude's cached "recent failure" for the Telegram server so this session retries it.
 F="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/mcp-needs-auth-cache.json"
 if [ -f "$F" ]; then

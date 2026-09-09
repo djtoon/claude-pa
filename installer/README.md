@@ -104,6 +104,9 @@ notification, `notify-send`). Quiet runs are suppressed unless "also when nothin
   "Channel notifications registered", and restarts the session with backoff (10s → 5 min) if the channel did
   not come up or the session exited. The `pa` / `pa-up` launchers clear that cache too.
 - Every launcher and the tray start with `-c`, so closing and reopening continues the same conversation.
+- One tray per folder and one phone session per machine: a second pa-tray exits at once (it cannot take the
+  folder's loopback lock), the tray refuses to start its session while another `claude --channels` runs, and
+  `pa` / `pa.cmd` warn and ask before starting a second session.
 - The Telegram reply / react / edit tools are pre-approved in `.claude/settings.json`; a hidden session must
   never wait on a permission prompt for its own replies. Other tools ask, and the Telegram plugin relays the
   question to your phone (approve with the code it sends).
