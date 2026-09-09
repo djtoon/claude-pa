@@ -14,7 +14,8 @@ if [ -f "$F" ]; then
   fi
 fi
 SESSION=pa
-CMD="cd '$ROOT' && claude -c --channels plugin:telegram@claude-plugins-official --permission-mode acceptEdits"
+# The permission mode comes from the folder's .claude/settings.json (set by the installer's Permissions step).
+CMD="cd '$ROOT' && claude -c --channels plugin:telegram@claude-plugins-official"
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     # Git Bash rewrites bare /flags into paths, so keep cmd's arguments out of bash: everything lives in pa-up.cmd.

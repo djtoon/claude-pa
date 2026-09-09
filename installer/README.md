@@ -20,18 +20,19 @@ pa-installer uninstall DIR [--purge] # stop sessions, remove schedule + autostar
 pa-installer list                   # bundled skills, agents, personalities
 ```
 
-## The wizard (black / orange / white, terminal style)
+## The wizard (black / orange / white, terminal style, with a waving robot)
 
 1. **Personality** — Serious, Fun, Weird, Warm, Sarcastic, Zen, Hype, or custom text (tone only; the
    operating rules are the same for all); assistant name; your sign-off.
 2. **Folder** — built-in directory browser, creates folders, shows whether it is an upgrade.
-3. **Phone (optional)** — paste the BotFather token → *Verify*; the wizard then watches for your first
+3. **Permissions** — allow everything (default) or ask; allowed folders, never-touched paths, folder guard, OS sandbox.
+4. **Phone (optional)** — paste the BotFather token → *Verify*; the wizard then watches for your first
    message to the bot and allowlists you (no pairing code). *Skip phone* is always available.
    Everything else (timezone, workdays, hours, skills, wiring, automation toggles) sits under
    **Advanced**, collapsed, with defaults that are fine.
-4. **Ready to install** — a plain-language summary (what is written, what happens automatically);
+5. **Ready to install** — a plain-language summary (what is written, what happens automatically);
    the full file list is one click away.
-5. **Done** — a live status board (files, CLI, signed in, trusted, plugin, Bun, token, access, chat
+6. **Done** — a live status board (files, CLI, signed in, trusted, plugin, Bun, token, access, chat
    id, tray app, launcher, schedule) with one-click fixes; a services board from `claude mcp list`
    with an **[ authorize ]** button per service; buttons to start the tray app, start a console
    session, run the morning brief, test the push, test the hook, open the folder.
@@ -63,6 +64,27 @@ shims cannot be spawned that way and the server dies with "Connection closed". T
 real `bun.exe` / `bun` binary (official installer, `~/.bun/bin`) and every launcher puts `~/.bun/bin` and
 `~/.local/bin` first on PATH.
 
+## Permissions and the folder fence (step 3)
+
+The wizard asks how the assistant may act, with **Allow everything** as the default: no permission prompts
+in the folder (`permissions.defaultMode: bypassPermissions`, connectors allowed), because a background session
+that answers from your phone cannot stop to ask. **Ask me first** keeps prompts (the Telegram plugin relays
+them to your phone). Either way three things fence it in:
+
+- **Allowed folders**: the install folder plus any you add (Documents, a drive root such as the C: drive to allow
+  everything, ...). They become `permissions.additionalDirectories` and `.pa/allowed-folders.txt`.
+- **Never touched**: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.claude.json`, `~/.claude`, gcloud/kube/docker configs,
+  plus your own entries. They become Read/Edit deny rules (deny wins in every mode, bypass included), the
+  destructive shell commands (`rm -rf`, `format`, `diskpart`, `mkfs`, `dd`) are denied too, and the list is
+  written to `.pa/protected-folders.txt`.
+- **Folder guard**: a PreToolUse hook, `pa-tray guard`, runs before every Read / Edit / Write / Glob / Grep / LS /
+  Bash call and blocks (exit 2, reason shown to Claude) anything that targets a protected path or a path outside
+  the allowed folders. Works on every OS and in every permission mode; the Bash check is by literal paths in the
+  command (absolute, `~/`, MSYS `/c/...`, and `..` climbs). Edit the two `.pa/*.txt` lists and restart.
+- **OS sandbox** (macOS seatbelt, Linux/WSL bubblewrap): enabled by the installer where it exists, confining shell
+  commands' writes to the allowed folders and network to a few domains. Windows has no OS sandbox in Claude Code;
+  there the folder guard is the fence. The assistant's own rules still make it confirm sends and posts in chat.
+
 ## Proactive loop
 
 Step 3 of the wizard has **Proactive updates**: check every off / 15 min / 30 min / 1 h / 2 h / 4 h, plus
@@ -86,9 +108,8 @@ notification, `notify-send`). Quiet runs are suppressed unless "also when nothin
   never wait on a permission prompt for its own replies. Other tools ask, and the Telegram plugin relays the
   question to your phone (approve with the code it sends).
 - Messages sent while the assistant is down wait in Telegram's queue (24 h) and are delivered on the next start.
-- Optional, no prompts at all: `python3 tools/enable-no-prompt-mode.py && ./build.sh` switches the phone
-  session to `bypassPermissions` inside the folder (connectors allowed, credentials folders and destructive
-  commands denied, bypass acknowledgement recorded). The pa charter still confirms sends/posts in chat.
+- No prompts is the default (Permissions step); the bypass acknowledgement is recorded in ~/.claude.json so the
+  hidden session never hangs on that dialog. The pa charter still confirms sends/posts in chat.
 
 ## Personality in every message
 

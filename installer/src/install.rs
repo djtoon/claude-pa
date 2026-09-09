@@ -35,6 +35,18 @@ pub struct Options {
     pub loop_minutes: u32,
     /// Send a short digest even when nothing is urgent (otherwise the radar stays quiet).
     pub loop_always: bool,
+    /// "allow" (default): no permission prompts in this folder (permissions.defaultMode = bypassPermissions);
+    /// "ask": acceptEdits, every other tool asks (the Telegram plugin relays the question to the phone).
+    pub permission_mode: String,
+    /// Extra folders the assistant may read and write (permissions.additionalDirectories, sandbox allowWrite).
+    pub allowed_dirs: Vec<String>,
+    /// Paths it must never touch (Read/Edit deny rules, sandbox denyRead/denyWrite). `~` is expanded by Claude Code.
+    pub protected_paths: Vec<String>,
+    /// Enable Claude Code's OS sandbox for shell commands where it exists (macOS seatbelt, Linux/WSL bubblewrap).
+    pub sandbox: bool,
+    /// Folder guard: a PreToolUse hook (`pa-tray guard`) that blocks file and shell tools outside the allowed
+    /// folders and inside the protected ones. Works on every OS and in every permission mode.
+    pub folder_guard: bool,
     pub telegram_token: String,
     pub telegram_chat_id: String,
     /// Numeric Telegram user id to allowlist for the channel plugin (usually equals the chat id of a DM).
@@ -73,6 +85,11 @@ impl Default for Options {
             hours_end: "18:30".into(),
             loop_minutes: 120,
             loop_always: false,
+            permission_mode: "allow".into(),
+            allowed_dirs: Vec::new(),
+            protected_paths: DEFAULT_PROTECTED.iter().map(|s| s.to_string()).collect(),
+            sandbox: true,
+            folder_guard: true,
             telegram_token: String::new(),
             telegram_chat_id: String::new(),
             telegram_user_id: String::new(),
@@ -107,8 +124,14 @@ const MARK_START: &str = "<!-- pa-pack -->";
 const MARK_END: &str = "<!-- /pa-pack -->";
 const HOOK_SESSION_START: &str = r#"bash "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh""#;
 const HOOK_NOTIFY: &str = r#"bash "$CLAUDE_PROJECT_DIR/.claude/hooks/notify-phone.sh""#;
-// The Telegram reply/react/edit tools must never wait for a permission prompt: the phone session is hidden.
-const PERMISSIONS: &[&str] = &["Read(./.pa/**)", "Edit(./.pa/**)", "Write(./.pa/**)", "mcp__plugin_telegram_telegram", "mcp__plugin_telegram_telegram__reply", "mcp__plugin_telegram_telegram__react", "mcp__plugin_telegram_telegram__edit_message"];
+// Always allowed: the folder itself, web lookups, and the Telegram reply/react/edit tools (the phone session is
+// hidden and must never wait on a prompt for its own replies).
+const PERMISSIONS: &[&str] = &["Read(./**)", "Edit(./**)", "Write(./**)", "Glob", "Grep", "WebSearch", "WebFetch", "mcp__plugin_telegram_telegram"];
+// Allowed as well in "allow" mode (documents intent; bypassPermissions covers them anyway).
+const CONNECTOR_SERVERS: &[&str] = &["mcp__claude_ai_Gmail", "mcp__claude_ai_Google_Calendar", "mcp__claude_ai_Google_Drive", "mcp__claude_ai_Slack", "mcp__claude_ai_Atlassian_Rovo", "mcp__atlassian"];
+// Never, in any mode (deny rules win over everything, including bypassPermissions).
+const DENIED_COMMANDS: &[&str] = &["Bash(rm -rf:*)", "Bash(format:*)", "Bash(diskpart:*)", "Bash(mkfs:*)", "Bash(dd:*)"];
+pub const DEFAULT_PROTECTED: &[&str] = &["~/.ssh", "~/.aws", "~/.gnupg", "~/.claude.json", "~/.claude", "~/.config/gcloud", "~/.kube", "~/.docker"];
 const AUTOSTART_LINE: &str = "session       @login                        pa-up.sh";
 
 fn norm(s: &str) -> String {
@@ -375,7 +398,10 @@ fn merge_claude_md(existing: Option<String>, block: &str) -> String {
     }
 }
 
-fn merge_settings(existing: Option<String>, telegram_state_dir: &str) -> Result<(String, Vec<String>), String> {
+fn merge_settings(existing: Option<String>, telegram_state_dir: &str, o: &Options) -> Result<(String, Vec<String>), String> {
+    let allow_all = o.permission_mode != "ask";
+    let protected: Vec<String> = o.protected_paths.iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect();
+    let extra_dirs: Vec<String> = o.allowed_dirs.iter().map(|p| p.trim()).filter(|p| !p.is_empty()).map(|p| normalize(p).to_string_lossy().to_string()).collect();
     let mut notes = Vec::new();
     let mut root: Value = match existing {
         Some(t) if !t.trim().is_empty() => serde_json::from_str(&t).map_err(|e| format!("existing settings.json is not valid JSON: {e}"))?,
@@ -406,6 +432,26 @@ fn merge_settings(existing: Option<String>, telegram_state_dir: &str) -> Result<
         }
     }
 
+    // Folder guard: PreToolUse hook that fences Read/Edit/Write/Glob/Grep/LS/Bash to the allowed folders.
+    let guard_cmd = format!("\"$CLAUDE_PROJECT_DIR/.pa/bin/{}\" guard", pack::TRAY_NAME.trim());
+    let pre = hooks.entry("PreToolUse").or_insert_with(|| json!([]));
+    let pre = pre.as_array_mut().ok_or("settings.hooks.PreToolUse is not an array")?;
+    let idx = pre.iter().position(|entry| {
+        entry.get("hooks").and_then(|h| h.as_array()).map(|h| h.iter().any(|x| x.get("command").and_then(|c| c.as_str()).map(|c| c.contains("pa-tray") && c.ends_with(" guard")).unwrap_or(false))).unwrap_or(false)
+    });
+    let guard_wanted = o.folder_guard && !pack::TRAY_BIN.is_empty();
+    match (guard_wanted, idx) {
+        (true, None) => {
+            pre.push(json!({ "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Glob|Grep|LS|Bash", "hooks": [ { "type": "command", "command": guard_cmd } ] }));
+            notes.push("folder guard hook".into());
+        }
+        (false, Some(i)) => {
+            pre.remove(i);
+            notes.push("folder guard removed".into());
+        }
+        _ => {}
+    }
+
     let perms = obj.entry("permissions").or_insert_with(|| json!({}));
     let perms = perms.as_object_mut().ok_or("settings.permissions is not an object")?;
     let allow = perms.entry("allow").or_insert_with(|| json!([]));
@@ -417,8 +463,76 @@ fn merge_settings(existing: Option<String>, telegram_state_dir: &str) -> Result<
             added += 1;
         }
     }
+    if allow_all {
+        for rule in CONNECTOR_SERVERS {
+            if !allow.iter().any(|v| v.as_str() == Some(rule)) {
+                allow.push(Value::String(rule.to_string()));
+                added += 1;
+            }
+        }
+    }
     if added > 0 {
-        notes.push(format!("allowed {added} .pa/ rules"));
+        notes.push(format!("allowed {added} rules"));
+    }
+
+    // Protected paths and destructive commands: deny rules win in every mode.
+    let deny = perms.entry("deny").or_insert_with(|| json!([]));
+    let deny = deny.as_array_mut().ok_or("settings.permissions.deny is not an array")?;
+    let mut denied = 0;
+    let mut wanted: Vec<String> = Vec::new();
+    for p in &protected {
+        let glob = if p.ends_with("/**") || p.ends_with('*') || p.ends_with(".json") { p.clone() } else { format!("{p}/**") };
+        wanted.push(format!("Read({glob})"));
+        wanted.push(format!("Edit({glob})"));
+    }
+    wanted.extend(DENIED_COMMANDS.iter().map(|s| s.to_string()));
+    for rule in wanted {
+        if !deny.iter().any(|v| v.as_str() == Some(rule.as_str())) {
+            deny.push(Value::String(rule));
+            denied += 1;
+        }
+    }
+    if denied > 0 {
+        notes.push(format!("protected {} paths", protected.len()));
+    }
+
+    // Extra folders the assistant may work in.
+    if !extra_dirs.is_empty() {
+        let dirs = perms.entry("additionalDirectories").or_insert_with(|| json!([]));
+        let dirs = dirs.as_array_mut().ok_or("settings.permissions.additionalDirectories is not an array")?;
+        let mut n = 0;
+        for d in &extra_dirs {
+            if !dirs.iter().any(|v| v.as_str() == Some(d.as_str())) {
+                dirs.push(Value::String(d.clone()));
+                n += 1;
+            }
+        }
+        if n > 0 {
+            notes.push(format!("{n} allowed folders"));
+        }
+    }
+
+    // Prompting policy for every session in this folder.
+    let mode = if allow_all { "bypassPermissions" } else { "acceptEdits" };
+    if perms.get("defaultMode").and_then(|v| v.as_str()) != Some(mode) {
+        perms.insert("defaultMode".into(), json!(mode));
+        notes.push(if allow_all { "no permission prompts in this folder".to_string() } else { "tools ask (relayed to Telegram)".to_string() });
+    }
+
+    // OS sandbox for shell commands: macOS (seatbelt) and Linux/WSL (bubblewrap) only; Windows has none.
+    if o.sandbox && !cfg!(windows) {
+        let mut allow_write: Vec<String> = vec![".".to_string()];
+        allow_write.extend(extra_dirs.iter().cloned());
+        let sandbox = json!({
+            "enabled": true,
+            "autoAllowBashIfSandboxed": true,
+            "filesystem": { "allowWrite": allow_write, "denyRead": protected, "denyWrite": protected },
+            "network": { "allowedDomains": ["api.telegram.org", "*.anthropic.com", "*.claude.ai", "*.googleapis.com"] }
+        });
+        if obj.get("sandbox") != Some(&sandbox) {
+            obj.insert("sandbox".into(), sandbox);
+            notes.push("OS sandbox for shell commands".into());
+        }
     }
 
     // Project .mcp.json servers are approved without the dialog.
@@ -602,7 +716,7 @@ pub fn run(o: &Options) -> Report {
             f.chmod_x(&dest);
         }
         let settings = claude.join("settings.json");
-        match merge_settings(read_opt(&settings), &tg_dir.to_string_lossy()) {
+        match merge_settings(read_opt(&settings), &tg_dir.to_string_lossy(), o) {
             Ok((text, notes)) => f.put_merged(&settings, &text, "merge", notes.join("; ")),
             Err(e) => f.step(&settings, "error", e),
         }
@@ -651,6 +765,22 @@ pub fn run(o: &Options) -> Report {
         let loop_note = if o.loop_minutes == 0 { "proactive loop off".to_string() } else { format!("proactive loop every {} min{}", o.loop_minutes, if o.loop_always { ", digest even when quiet" } else { "" }) };
         f.put_merged(&sched_path, &sched, "update", format!("{loop_note}{}", if o.autostart { "; phone session starts at login" } else { "" }));
         f.put(&pa.join(".gitignore"), ".env\nruns/\ntelegram/\n", false);
+
+        // Folder guard lists (managed: they mirror the choices made in the installer; edit them, then restart).
+        let mut allowed = String::from("# Folders the assistant may read and write, one per line. The install folder and the temp dir are always allowed.\n# A drive root like C:\\ (Windows) or / (macOS, Linux) allows everything. Restart the assistant after editing.\n");
+        for d in &o.allowed_dirs {
+            if !d.trim().is_empty() {
+                allowed.push_str(&format!("{}\n", normalize(d.trim()).to_string_lossy()));
+            }
+        }
+        f.put(&pa.join("allowed-folders.txt"), &allowed, true);
+        let mut protected = String::from("# Never read or written, even inside an allowed folder. ~ is your home folder. Restart the assistant after editing.\n");
+        for p in &o.protected_paths {
+            if !p.trim().is_empty() {
+                protected.push_str(&format!("{}\n", p.trim()));
+            }
+        }
+        f.put(&pa.join("protected-folders.txt"), &protected, true);
 
         // Telegram: chat id for pushes (.pa/.env), token + allowlist for the channel plugin (.pa/telegram/).
         let env_path = pa.join(".env");
@@ -909,6 +1039,18 @@ fn provision(f: &mut Fs, o: &Options, root: &Path) {
             }
         }
     }
+    if o.permission_mode != "ask" {
+        // A hidden session cannot answer Claude Code's one-time "bypass permissions" dialog; record the acknowledgement.
+        if dry {
+            f.label("no-prompt mode", "todo", "record the bypass-permissions acknowledgement in ~/.claude.json (a hidden session cannot answer that dialog)");
+        } else {
+            match provision::accept_bypass_mode() {
+                Ok(true) => f.label("no-prompt mode", "ok", "acknowledgement recorded"),
+                Ok(false) => f.label("no-prompt mode", "same", "already acknowledged"),
+                Err(e) => f.label("no-prompt mode", "error", e),
+            }
+        }
+    }
     if o.auto_plugins {
         if dry {
             f.label("marketplace", if provision::marketplace_known(provision::OFFICIAL_MARKETPLACE) { "same" } else { "todo" }, "register anthropics/claude-plugins-official");
@@ -998,7 +1140,21 @@ pub fn status(path: &str) -> Value {
     let allow = access.get("allowFrom").and_then(|a| a.as_array()).map(|a| a.len()).unwrap_or(0);
     let sched = read_opt(&pa.join("schedule.txt")).unwrap_or_default();
     let skills = fs::read_dir(root.join(".claude").join("skills")).map(|d| d.flatten().count()).unwrap_or(0);
+    let settings: Value = read_opt(&root.join(".claude").join("settings.json")).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(json!({}));
+    let default_mode = settings.get("permissions").and_then(|p| p.get("defaultMode")).and_then(|m| m.as_str()).unwrap_or("default").to_string();
+    let extra_dirs = settings.get("permissions").and_then(|p| p.get("additionalDirectories")).cloned().unwrap_or(json!([]));
+    let sandbox_on = settings.get("sandbox").and_then(|s| s.get("enabled")).and_then(|b| b.as_bool()).unwrap_or(false);
+    let guard_on = settings.get("hooks").and_then(|h| h.get("PreToolUse")).and_then(|a| a.as_array()).map(|a| a.iter().any(|e| e.to_string().contains("pa-tray") && e.to_string().contains(" guard"))).unwrap_or(false);
+    let allowed_list = read_opt(&pa.join("allowed-folders.txt")).map(|t| t.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')).count()).unwrap_or(0);
+    let protected_list = read_opt(&pa.join("protected-folders.txt")).map(|t| t.lines().filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#')).count()).unwrap_or(0);
     json!({
+        "permission_mode": default_mode,
+        "allowed_dirs": extra_dirs,
+        "sandbox": sandbox_on,
+        "sandbox_available": !cfg!(windows),
+        "folder_guard": guard_on,
+        "allowed_count": allowed_list,
+        "protected_count": protected_list,
         "target": root.to_string_lossy(),
         "installed": root.join(".claude").join("skills").join("pa").join("SKILL.md").is_file(),
         "skills": skills,

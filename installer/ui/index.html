@@ -33,7 +33,23 @@
   .hello .s { color: var(--muted); }
   .hello .ver { color: var(--dim); }
   .banner-art { color: var(--or); font-size: 10px; line-height: 1.05; white-space: pre; margin: 10px 0 4px; letter-spacing: 0; overflow-x: auto; }
+  .mascot { position: absolute; right: 18px; top: 10px; color: var(--or); font-size: 11px; line-height: 1.05; white-space: pre; margin: 0; text-shadow: 0 0 10px rgba(255,139,61,.35); }
+  .mascot .eye { color: var(--fg); } .mascot .wave { display: inline-block; transform-origin: 20% 100%; animation: wave 2.4s ease-in-out infinite; }
+  @keyframes wave { 0%, 60%, 100% { transform: rotate(0deg); } 70% { transform: rotate(-12deg); } 80% { transform: rotate(10deg); } 90% { transform: rotate(-6deg); } }
+  @media (max-width: 860px) { .mascot { display: none; } }
   @media (max-width: 720px) { .banner-art { display: none; } }
+  /* ---- choice cards (permissions) ---- */
+  .choice { cursor: pointer; padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg2); position: relative; }
+  .choice:hover { border-color: var(--or2); }
+  .choice.sel { border-color: var(--or); background: #120b06; box-shadow: inset 0 0 0 1px var(--or); }
+  .choice .nm { font-weight: 700; color: var(--fg); } .choice.sel .nm { color: var(--or); }
+  .choice .ds { color: var(--muted); font-size: 12.5px; margin-top: 4px; line-height: 1.45; }
+  .choice .check { position: absolute; top: 10px; right: 12px; color: var(--dim); } .choice .check::before { content: "[ ]"; }
+  .choice.sel .check { color: var(--or); } .choice.sel .check::before { content: "[x]"; }
+  .list { display: grid; gap: 4px; margin-top: 8px; }
+  .list div { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 3px; background: #000; font-size: 12.5px; }
+  .list div .x { cursor: pointer; color: var(--dim); } .list div .x:hover { color: var(--err); }
+  .list div.fixed { color: var(--muted); }
   .cursor::after { content: "▌"; color: var(--or); animation: blink 1s steps(1) infinite; margin-left: 2px; }
   @keyframes blink { 50% { opacity: 0; } }
 
@@ -208,14 +224,26 @@
 ██║     ██║  ██║      ██║     ██║  ██║╚██████╗██║  ██╗
 ╚═╝     ╚═╝  ╚═╝      ╚═╝     ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝</div>
     <div class="s cursor">&nbsp;&nbsp;/install</div>
+    <pre class="mascot" aria-hidden="true">        ┏━┓
+    ┏━━━┻━┻━━━┓
+    ┃  <span class="eye">◉</span>   <span class="eye">◉</span>  ┃      ╱
+    ┃  ╰━━━╯  ┃━━━━━╯
+    ┗━━━┳━━━┳━┛
+   ┏━━━━┻━━━┻━━━━┓
+   ┃  ▐█▌   ▐█▌  ┃
+   ┃  ▐█▌   ▐█▌  ┃
+   ┗━━┳━━━━━━━┳━━┛
+      ┃       ┃
+     ━┻━     ━┻━</pre>
   </div>
 
   <div class="steps" id="steps">
     <div data-i="0"><b>[1]</b> Persona</div>
     <div data-i="1"><b>[2]</b> Folder</div>
-    <div data-i="2"><b>[3]</b> Setup</div>
-    <div data-i="3"><b>[4]</b> Review</div>
-    <div data-i="4"><b>[5]</b> Done</div>
+    <div data-i="2"><b>[3]</b> Permissions</div>
+    <div data-i="3"><b>[4]</b> Phone</div>
+    <div data-i="4"><b>[5]</b> Review</div>
+    <div data-i="5"><b>[6]</b> Done</div>
   </div>
 
   <div id="noToken" class="banner err" hidden>This page was opened without its session token. Use the exact URL the installer printed in the terminal.</div>
@@ -280,8 +308,40 @@
     <div class="nav"><button class="btn ghost" onclick="go(0)">← back</button><button class="btn primary" id="toSetup" onclick="go(2)">Set it up →</button></div>
   </section>
 
-  <!-- 3 SETUP -->
+  <!-- 3 PERMISSIONS -->
   <section class="step" data-step="2">
+    <h2>What may it do?</h2>
+    <p class="lead">The assistant runs in the background and answers from your phone, so it cannot stop to ask you every time. Pick how it behaves; the folder guard keeps it inside the folders you allow either way.</p>
+    <div class="grid g2" id="permChoices"></div>
+    <div class="card" style="margin-top:14px">
+      <h3>Allowed folders</h3>
+      <div class="small muted" style="margin-bottom:6px">Where it may read and write. The install folder is always allowed. Add more folders, or a drive root (<span class="hi" id="driveRootHint">C:\</span>) to allow everything.</div>
+      <div class="row">
+        <input type="text" id="allowDirInput" placeholder="C:\Users\me\Documents" style="flex:1">
+        <button class="btn small" onclick="addAllowedDir()">add</button>
+      </div>
+      <div class="row" style="margin-top:6px" id="allowQuick"></div>
+      <div class="list" id="allowList"></div>
+    </div>
+    <div class="card">
+      <h3>Never touched</h3>
+      <div class="small muted" style="margin-bottom:6px">Blocked even inside an allowed folder: keys, credentials, Claude's own config. Add your own if you like.</div>
+      <div class="row">
+        <input type="text" id="protectInput" placeholder="~/secrets or C:\Finance" style="flex:1">
+        <button class="btn small" onclick="addProtected()">add</button>
+      </div>
+      <div class="list" id="protectList"></div>
+    </div>
+    <div class="card">
+      <h3>How it is enforced</h3>
+      <div class="toggle"><div><div class="t">Folder guard (all systems)</div><div class="s">A hook checks every file and shell command before it runs and blocks anything outside the allowed folders or inside a protected one. Works in every mode.</div></div><div class="tgl" id="guardTgl" onclick="toggleGuard()">[ ON ]</div></div>
+      <div class="toggle"><div><div class="t">OS sandbox for shell commands</div><div class="s" id="sandboxText">macOS and Linux: Claude Code's built-in sandbox confines shell commands to the allowed folders and a few domains.</div></div><div class="tgl" id="sandboxTgl" onclick="toggleSandbox()">[ ON ]</div></div>
+    </div>
+    <div class="nav"><button class="btn ghost" onclick="go(1)">← back</button><button class="btn primary" onclick="go(3)">Phone →</button></div>
+  </section>
+
+  <!-- 4 PHONE -->
+  <section class="step" data-step="3">
     <h2>Phone (optional)</h2>
     <p class="lead">Talk to the assistant from Telegram and get the morning brief on your phone. Optional; skip it and add it later from the last page.</p>
     <div id="envBanner"></div>
@@ -341,11 +401,11 @@
       <div id="toggles"></div>
     </div>
         </details>
-    <div class="nav"><button class="btn ghost" onclick="go(1)">← back</button><span class="row"><button class="btn ghost" onclick="skipPhone()">Skip phone →</button><button class="btn primary" onclick="review()">Continue →</button></span></div>
+    <div class="nav"><button class="btn ghost" onclick="go(2)">← back</button><span class="row"><button class="btn ghost" onclick="skipPhone()">Skip phone →</button><button class="btn primary" onclick="review()">Continue →</button></span></div>
   </section>
 
-  <!-- 4 REVIEW -->
-  <section class="step" data-step="3">
+  <!-- 5 REVIEW -->
+  <section class="step" data-step="4">
     <h2>Ready to install</h2>
     <p class="lead">Nothing is written yet. This is what will happen in <span class="hi" id="reviewTarget"></span>.</p>
     <div id="reviewBanner"></div>
@@ -354,11 +414,11 @@
     <div class="counts" id="reviewCounts"></div>
     <div class="plan" id="plan"></div>
     </details>
-    <div class="nav"><button class="btn ghost" onclick="go(2)">← back</button><button class="btn primary" id="installBtn" onclick="doInstall()">Install</button></div>
+    <div class="nav"><button class="btn ghost" onclick="go(3)">← back</button><button class="btn primary" id="installBtn" onclick="doInstall()">Install</button></div>
   </section>
 
-  <!-- 5 DONE -->
-  <section class="step" data-step="4">
+  <!-- 6 DONE -->
+  <section class="step" data-step="5">
     <div class="done-hero"><div class="big" id="doneEmoji">✻</div><div><h2 id="doneTitle">Installed</h2><p class="lead" style="margin:0" id="doneLead"></p></div></div>
     <div class="counts" id="doneCounts"></div>
 
@@ -425,6 +485,7 @@
     <details class="card" style="margin-top:14px"><summary>What was written and done</summary><div class="plan" id="donePlan" style="margin-top:10px"></div></details>
 
     <div class="nav"><button class="btn ghost" onclick="go(2)">← change settings and reinstall</button><button class="btn" onclick="quit()">Close installer</button></div>
+    <!-- (index 2 = Permissions; Phone and Advanced follow) -->
   </section>
 
   <footer>pa-pack · black, orange, white · 127.0.0.1 only</footer>
@@ -452,6 +513,7 @@ let info = null;
 const state = {
   persona: 'serious', workdays: new Set([0, 1, 2, 3, 4]), skills: new Set(),
   loopMinutes: 120, loopAlways: false,
+  permissionMode: 'allow', allowedDirs: [], protectedPaths: ['~/.ssh', '~/.aws', '~/.gnupg', '~/.claude.json', '~/.claude', '~/.config/gcloud', '~/.kube', '~/.docker'], sandbox: true, folderGuard: true,
   toggles: { hooks: true, mcp: true, claude_md: true, state: true, scripts: true, agents: true, overwrite: true },
   auto: { auto_prereqs: true, auto_trust: true, auto_plugins: true, auto_bun: true, auto_schedule: true, autostart: true },
   bot: null,
@@ -466,6 +528,7 @@ function go(i) {
   document.querySelectorAll('#steps div').forEach(d => { const k = +d.dataset.i; d.classList.toggle('active', k === i); d.classList.toggle('done', k < i); });
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (i === 1 && !$('dirs').children.length) browseTo(targetEl.value || info.suggested);
+  if (i === 2) renderPermissions();
 }
 
 // ---------- personas ----------
@@ -574,6 +637,50 @@ function renderLoop() {
   const t = $('loopAlways'); t.classList.toggle('on', state.loopAlways); t.textContent = state.loopAlways ? '[ ON ]' : '[ OFF ]';
 }
 function toggleLoopAlways() { state.loopAlways = !state.loopAlways; renderLoop(); }
+
+// ---------- permissions ----------
+const PERM_CHOICES = [
+  ['allow', 'Allow everything (recommended)', 'No permission prompts: files in its folders, shell, web, and all connected services. It still asks you in chat before sending mail, posting or creating events. The folder guard keeps it inside the allowed folders.'],
+  ['ask', 'Ask me first', 'Every new tool use asks. Since the session is hidden, the Telegram plugin relays each question to your phone and you answer with a code. Fine for a trial, tedious for daily use.'],
+];
+function renderPermissions() {
+  const box = $('permChoices'); box.innerHTML = '';
+  for (const [id, name, desc] of PERM_CHOICES) {
+    const d = document.createElement('div');
+    d.className = 'choice' + (state.permissionMode === id ? ' sel' : '');
+    d.innerHTML = `<div class="check"></div><div class="nm">${esc(name)}</div><div class="ds">${esc(desc)}</div>`;
+    d.onclick = () => { state.permissionMode = id; renderPermissions(); };
+    box.appendChild(d);
+  }
+  const win = info.os === 'windows';
+  const root = win ? 'C:\\' : '/';
+  $('driveRootHint').textContent = root;
+  $('allowDirInput').placeholder = win ? 'C:\\Users\\me\\Documents' : '/home/me/Documents';
+  const home = info.home.replace(/[\\/]+$/, ''); const sep = win ? '\\' : '/';
+  const quick = [['this folder only', null], ['Documents', home + sep + 'Documents'], ['Desktop', home + sep + 'Desktop'], ['Downloads', home + sep + 'Downloads'], ['home folder', home], ['everything (' + root + ')', root]];
+  const q = $('allowQuick'); q.innerHTML = '';
+  for (const [label, path] of quick) {
+    const c = document.createElement('span'); c.className = 'chip quick'; c.textContent = label;
+    c.onclick = () => { if (path === null) state.allowedDirs = []; else if (!state.allowedDirs.includes(path)) state.allowedDirs.push(path); renderPermissions(); };
+    q.appendChild(c);
+  }
+  const al = $('allowList');
+  al.innerHTML = `<div class="fixed"><span>${esc(targetEl.value.trim() || '(the install folder)')}</span><span class="dim">always</span></div>` +
+    state.allowedDirs.map((p, i) => `<div><span>${esc(p)}</span><span class="x" onclick="state.allowedDirs.splice(${i},1);renderPermissions()">[remove]</span></div>`).join('');
+  $('protectList').innerHTML = state.protectedPaths.map((p, i) => `<div><span>${esc(p)}</span><span class="x" onclick="state.protectedPaths.splice(${i},1);renderPermissions()">[remove]</span></div>`).join('');
+  const g = $('guardTgl'); g.classList.toggle('on', state.folderGuard); g.textContent = state.folderGuard ? '[ ON ]' : '[ OFF ]';
+  const sb = $('sandboxTgl');
+  if (win) {
+    state.sandbox = false; sb.classList.remove('on'); sb.textContent = '[ N/A ]';
+    $('sandboxText').textContent = 'Windows has no OS sandbox in Claude Code (it exists on macOS and Linux/WSL). Here the folder guard above is the fence, plus the assistant\'s own rules.';
+  } else {
+    sb.classList.toggle('on', state.sandbox); sb.textContent = state.sandbox ? '[ ON ]' : '[ OFF ]';
+  }
+}
+function addAllowedDir() { const v = $('allowDirInput').value.trim(); if (!v) return; if (!state.allowedDirs.includes(v)) state.allowedDirs.push(v); $('allowDirInput').value = ''; renderPermissions(); }
+function addProtected() { const v = $('protectInput').value.trim(); if (!v) return; if (!state.protectedPaths.includes(v)) state.protectedPaths.push(v); $('protectInput').value = ''; renderPermissions(); }
+function toggleGuard() { state.folderGuard = !state.folderGuard; renderPermissions(); }
+function toggleSandbox() { if (info.os === 'windows') return; state.sandbox = !state.sandbox; renderPermissions(); }
 function renderDays() {
   const box = $('days'); box.innerHTML = '';
   DAYS.forEach((d, i) => {
@@ -656,7 +763,7 @@ async function tgAutoDetect() {
   const myPoll = ++tgPoll;
   const tok = $('tgToken').value.trim();
   for (let i = 0; i < 100; i++) {           // ~5 minutes
-    if (myPoll !== tgPoll || current !== 2) return;
+    if (myPoll !== tgPoll || current !== 3) return;
     if ($('tgUser').value.trim()) return;
     $('tgUserLine').innerHTML = `<span class="spinner"></span> <span class="muted">waiting for your first message to the bot… (${i * 3}s)</span>`;
     try {
@@ -690,6 +797,7 @@ function options(dry) {
     signoff: $('signoff').value, timezone: $('tz').value, workdays: [...state.workdays].sort(),
     hours_start: $('hStart').value, hours_end: $('hEnd').value,
     loop_minutes: state.loopMinutes, loop_always: state.loopAlways,
+    permission_mode: state.permissionMode, allowed_dirs: [...state.allowedDirs], protected_paths: [...state.protectedPaths], sandbox: state.sandbox, folder_guard: state.folderGuard,
     telegram_token: $('tgToken').value.trim(), telegram_chat_id: $('tgChat').value.trim(), telegram_user_id: $('tgUser').value.trim(),
     ...state.auto,
     dry_run: !!dry,
@@ -716,6 +824,7 @@ function summarize(r) {
   const lines = [];
   lines.push(`<b>${esc($('assistantName').value || 'Pa')}</b>, personality <b>${esc(persona)}</b>, sign-off <b>${esc($('signoff').value || 'Me')}</b>.`);
   lines.push(files ? `Writes or updates <b>${files}</b> files (${n('create')} new${n('update') ? ', ' + n('update') + ' updated' : ''}${n('merge') ? ', ' + n('merge') + ' merged' : ''})${n('same') ? `, ${n('same')} already up to date` : ''}.` : 'Everything is already up to date.');
+  lines.push(state.permissionMode === 'allow' ? `<b>No permission prompts</b> in this folder; folder guard ${state.folderGuard ? 'on' : 'off'}${state.allowedDirs.length ? ', also allowed: ' + state.allowedDirs.map(esc).join(', ') : ''}; ${state.protectedPaths.length} protected paths${state.sandbox && info.os !== 'windows' ? '; OS sandbox on' : ''}.` : `<b>Asks before each new tool</b> (relayed to Telegram); folder guard ${state.folderGuard ? 'on' : 'off'}.`);
   lines.push(state.loopMinutes ? `Proactive updates every <b>${LOOPS.find(l => l[0] === state.loopMinutes)?.[1] || state.loopMinutes + ' min'}</b> on workdays${state.loopAlways ? ', digest even when quiet' : ', only when something needs you'}; morning brief and end-of-day too.` : 'Proactive updates: off (morning brief and end-of-day still run).');
   const tok = $('tgToken').value.trim();
   lines.push(tok ? ($('tgUser').value.trim() ? 'Telegram: bot token saved, <b>you are allowlisted</b>, pushes go to your phone.' : 'Telegram: bot token saved. You are not detected yet, so the first message needs a pairing code (or use Detect me now on the next page).') : 'Telegram: skipped for now (add it later from the Done page).');
@@ -726,7 +835,7 @@ function summarize(r) {
 }
 async function review() {
   if (!targetEl.value.trim()) { toast('pick a folder first'); go(1); return; }
-  go(3);
+  go(4);
   $('reviewTarget').textContent = targetEl.value.trim();
   $('plan').innerHTML = '<div><span class="spinner"></span><span>planning…</span></div>'; $('reviewSummary').innerHTML = '<span class="spinner"></span> planning…';
   try {
@@ -749,7 +858,7 @@ async function doInstall() {
 function cmdRow(k, c) { return `<div class="cmd"><span class="k">${esc(k)}</span><code>${esc(c)}</code><button class="btn small ghost" onclick="copyText(this)">copy</button></div>`; }
 function copyText(btn) { const t = btn.parentElement.querySelector('code').textContent; navigator.clipboard?.writeText(t).then(() => toast('copied')); }
 function showDone(r) {
-  go(4);
+  go(5);
   $('doneEmoji').textContent = r.ok ? '✻' : '!';
   $('doneTitle').textContent = r.ok ? 'Installed' : 'Installed with errors';
   $('doneLead').innerHTML = `${esc(r.target)}`;
@@ -796,8 +905,8 @@ async function refreshStatus() {
     $('appsBoard').innerHTML = apps.join('');
 
     const tg = [];
-    const detectBtn = s.telegram_token ? act('detect', 'Detect me now') : `<button class="btn small" onclick="go(2)">Add token</button>`;
-    tg.push(srow(s.telegram_token, 'Bot token', s.telegram_token ? 'saved' : 'none yet: add it in step 3 (Phone) and reinstall', s.telegram_token ? '' : `<button class="btn small" onclick="go(2)">Add</button>`));
+    const detectBtn = s.telegram_token ? act('detect', 'Detect me now') : `<button class="btn small" onclick="go(3)">Add token</button>`;
+    tg.push(srow(s.telegram_token, 'Bot token', s.telegram_token ? 'saved' : 'none yet: add it in step 3 (Phone) and reinstall', s.telegram_token ? '' : `<button class="btn small" onclick="go(3)">Add</button>`));
     if (s.telegram_token) tg.push(srow(s.telegram_global, 'Bot config where Claude reads it', s.telegram_global ? 'in place' : 'missing: click Sync', s.telegram_global ? '' : act('sync-telegram', 'Sync')));
     tg.push(srow(s.telegram_users > 0, 'You are allowed to talk to it', s.telegram_users > 0 ? `yes (${s.telegram_users} user${s.telegram_users > 1 ? 's' : ''})` : 'not yet: send the bot any message, then click Detect me', s.telegram_users > 0 ? '' : detectBtn, s.telegram_users > 0 ? 'ok' : 'bad'));
     tg.push(srow(!!s.radar_line, 'Proactive loop', s.radar_line ? `radar at ${esc(s.radar_line)}${s.radar_always ? ', digest even when quiet' : ', only when something needs you'}` : 'off', '', s.radar_line ? 'ok' : 'info'));
@@ -811,6 +920,9 @@ async function refreshStatus() {
     if (info.os === 'windows') rows.push(srow(!!s.bash, 'Git Bash', s.bash ? esc(s.bash) : 'missing: the hooks and .pa/bin scripts need it', s.bash ? '' : act('install-git', 'Install Git for Windows'), s.bash ? 'ok' : 'err'));
     else rows.push(srow(!!s.tmux, 'tmux', s.tmux ? 'installed (background session for the tray app)' : 'missing', s.tmux ? '' : act('install-tmux', 'Install tmux')));
     rows.push(srow(s.auth.logged_in, 'Signed in', s.auth.logged_in ? `${esc(s.auth.email || '')} (${esc(s.auth.method || '')})` : 'not signed in: channels and connectors need a claude.ai login', s.auth.logged_in ? '' : act('login', 'Sign in')));
+    rows.push(srow(s.permission_mode === 'bypassPermissions' || s.permission_mode === 'acceptEdits', 'Permissions', s.permission_mode === 'bypassPermissions' ? 'no prompts in this folder' : s.permission_mode === 'acceptEdits' ? 'asks before new tools (relayed to Telegram)' : `mode: ${esc(s.permission_mode)}`, '', 'ok'));
+    rows.push(srow(s.folder_guard, 'Folder guard', s.folder_guard ? `on: ${s.allowed_count} extra allowed folder${s.allowed_count === 1 ? '' : 's'}, ${s.protected_count} protected paths (.pa/allowed-folders.txt, .pa/protected-folders.txt)` : 'off', '', s.folder_guard ? 'ok' : 'info'));
+    if (s.sandbox_available) rows.push(srow(s.sandbox, 'OS sandbox', s.sandbox ? 'on for shell commands' : 'off', '', s.sandbox ? 'ok' : 'info'));
     rows.push(srow(s.trusted, 'Workspace trusted', s.trusted ? 'no trust dialog, .pa/ permission rules active' : 'Claude Code will ask on first start and ignore the .pa/ rules until then', s.trusted ? '' : act('trust', 'Trust now')));
     rows.push(srow(s.plugin, 'Telegram channel plugin', s.plugin ? 'enabled for this project' : (s.marketplace ? 'marketplace registered, plugin not installed' : 'not installed'), s.plugin ? '' : act('plugins', 'Install')));
     rows.push(srow(!!s.bun, 'Bun runtime', s.bun ? esc(s.bun) : 'missing: the Telegram server needs the real bun.exe (an npm shim is not enough)', s.bun ? '' : act('bun', 'Install Bun')));

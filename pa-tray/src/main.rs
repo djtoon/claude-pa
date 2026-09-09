@@ -306,9 +306,10 @@ impl Session {
             const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             let mut c = Command::new(&claude);
-            // -c continues the previous conversation (a fresh one starts when there is none).
+            // -c continues the previous conversation (a fresh one starts when there is none). The permission mode
+            // comes from the folder's .claude/settings.json (permissions.defaultMode), set by the installer.
             let _ = resume;
-            c.args(["--channels", CHANNEL, "--permission-mode", "acceptEdits", "-c"]);
+            c.args(["--channels", CHANNEL, "-c"]);
             c.current_dir(&self.root).env_remove("CLAUDECODE").env("PATH", session_path());
             c.creation_flags(if visible { CREATE_NEW_CONSOLE } else { CREATE_NO_WINDOW });
             let child = c.spawn().map_err(|e| format!("cannot start claude: {e}"))?;
@@ -321,7 +322,7 @@ impl Session {
             let _ = visible;
             let name = session_name(&self.root);
             let _ = resume;
-            let cmd = format!("'{}' --channels {} --permission-mode acceptEdits -c", claude.to_string_lossy().replace('\'', "'\\''"), CHANNEL);
+            let cmd = format!("'{}' --channels {} -c", claude.to_string_lossy().replace('\'', "'\\''"), CHANNEL);
             let st = Command::new("tmux")
                 .args(["new-session", "-d", "-s", &name, "-c", &self.root.to_string_lossy(), &cmd])
                 .env_remove("CLAUDECODE")
@@ -607,7 +608,14 @@ impl ApplicationHandler<UserEvent> for App {
     }
 }
 
+mod guard;
+
 fn main() {
+    // `pa-tray guard` is the PreToolUse folder-guard hook (stdin JSON in, exit 2 to block). No tray, no loop.
+    if std::env::args().nth(1).as_deref() == Some("guard") {
+        let root = std::env::var_os("CLAUDE_PROJECT_DIR").map(PathBuf::from).unwrap_or_else(root_dir);
+        std::process::exit(guard::run(&root));
+    }
     let root = root_dir();
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().expect("event loop");
     let proxy = event_loop.create_proxy();
