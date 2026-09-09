@@ -630,11 +630,12 @@ pub fn open_terminal(dir: &Path, cmd: &str) -> Result<(), String> {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         let script = format!("cd '{}' && {}; exec bash", d.replace('\'', "'\\''"), cmd);
+        let quoted = format!("bash -lc \"{}\"", script.replace('"', "\\\""));
         let attempts: Vec<(&str, Vec<&str>)> = vec![
             ("x-terminal-emulator", vec!["-e", "bash", "-lc", &script]),
             ("gnome-terminal", vec!["--", "bash", "-lc", &script]),
             ("konsole", vec!["-e", "bash", "-lc", &script]),
-            ("xfce4-terminal", vec!["-e", &format!("bash -lc \"{}\"", script.replace('"', "\\\""))]),
+            ("xfce4-terminal", vec!["-e", &quoted]),
             ("xterm", vec!["-e", "bash", "-lc", &script]),
         ];
         for (bin, args) in attempts {

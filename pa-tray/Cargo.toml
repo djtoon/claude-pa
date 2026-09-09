@@ -1,6 +1,6 @@
 [package]
 name = "pa-tray"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Tray app that keeps the pa-pack phone session (claude --channels telegram) running in the background."
 license = "MIT"
