@@ -23,6 +23,7 @@ Then follow the "Next steps" it prints. Windows: run inside WSL2.
 
 ## Install, option B: the binary installer (project-local, no WSL needed)
 
+Site + downloads: https://djtoon.github.io/claude-pa/ (GitHub Pages from `docs/`).
 Repo: https://github.com/djtoon/claude-pa (release binaries for Windows, macOS arm64/x64 and Linux are built by
 GitHub Actions on every tag `v*`; see `.github/workflows/build.yml`).
 

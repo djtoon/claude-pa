@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pa-pack · a personal assistant for Claude Code</title>
+<meta name="description" content="pa-pack turns Claude Code into a proactive personal assistant that lives in one folder: Telegram on your phone, morning brief, radar every hour, follow-ups, memory. One installer, Windows / macOS / Linux.">
+<style>
+  :root {
+    --bg: #000000; --bg2: #0a0a0a; --panel: #050505;
+    --fg: #f4f1ec; --muted: #9a9a9a; --dim: #5c5c5c;
+    --or: #ff8b3d; --or2: #d97757; --or3: #ffb27a; --or-dim: #7a4322;
+    --err: #ff5c5c; --line: #3a2a1f; --line2: #6b3f24;
+    --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "Fira Code", Menlo, Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.6 var(--mono); }
+  ::selection { background: var(--or); color: #000; }
+  body::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, transparent 1px 3px); }
+  body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(0,0,0,.6) 100%); }
+  .wrap { position: relative; z-index: 1; max-width: 1000px; margin: 0 auto; padding: 22px 18px 70px; }
+  a { color: var(--or); text-decoration: none; } a:hover { text-decoration: underline; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-track { background: #000; } ::-webkit-scrollbar-thumb { background: var(--or-dim); border: 2px solid #000; }
+
+  .hello { border: 1px solid var(--or); border-radius: 6px; padding: 12px 16px; margin-bottom: 14px; position: relative; background: var(--panel); }
+  .hello .spark { color: var(--or); }
+  .hello .t { color: var(--fg); font-weight: 700; }
+  .hello .s { color: var(--muted); }
+  .hello .ver { color: var(--dim); }
+  .banner-art { color: var(--or); font-size: 10px; line-height: 1.05; white-space: pre; margin: 10px 0 4px; letter-spacing: 0; overflow-x: auto; }
+  .mascot { position: absolute; right: 18px; top: 10px; color: var(--or); font-size: 11px; line-height: 1.05; white-space: pre; margin: 0; text-shadow: 0 0 10px rgba(255,139,61,.35); }
+  .mascot .eye { color: var(--fg); }
+  @media (max-width: 860px) { .mascot { display: none; } }
+  @media (max-width: 720px) { .banner-art { display: none; } }
+  .cursor::after { content: "▌"; color: var(--or); animation: blink 1s steps(1) infinite; margin-left: 2px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  h2 { font-size: 18px; margin: 28px 0 6px; color: var(--fg); font-weight: 700; }
+  h2::before { content: "> "; color: var(--or); }
+  .lead { color: var(--muted); margin: 0 0 14px; }
+  .hi { color: var(--or); }
+  .card { position: relative; border: 1px solid var(--line2); border-radius: 6px; padding: 16px 16px 14px; background: var(--panel); }
+  .card + .card { margin-top: 12px; }
+  .card h3 { position: absolute; top: -9px; left: 12px; margin: 0; padding: 0 6px; background: var(--bg); color: var(--or); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .card h3::before { content: "── "; color: var(--line2); } .card h3::after { content: " ──"; color: var(--line2); }
+  .grid { display: grid; gap: 10px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); } .g3 { grid-template-columns: repeat(3, 1fr); } .g4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 720px) { .g2, .g3, .g4 { grid-template-columns: 1fr; } }
+
+  .btn { cursor: pointer; display: inline-block; border: 1px solid var(--or2); background: #000; color: var(--or3); padding: 9px 14px; border-radius: 3px; font: inherit; font-weight: 700; letter-spacing: .02em; transition: background .08s, color .08s; }
+  .btn::before { content: "[ "; color: var(--or-dim); } .btn::after { content: " ]"; color: var(--or-dim); }
+  .btn:hover { background: var(--or); color: #000; text-decoration: none; } .btn:hover::before, .btn:hover::after { color: #000; }
+  .btn.primary { background: var(--or); color: #000; border-color: var(--or); }
+  .btn.primary::before, .btn.primary::after { color: #000; }
+  .btn.primary:hover { background: var(--or3); }
+  .btn.ghost { border-color: var(--line); color: var(--muted); } .btn.ghost::before, .btn.ghost::after { color: var(--dim); }
+  .btn.ghost:hover { background: #1a1a1a; color: var(--fg); }
+
+  .dl { padding: 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg2); position: relative; }
+  .dl.mine { border-color: var(--or); box-shadow: inset 0 0 0 1px var(--or); background: #120b06; }
+  .dl .os { font-weight: 700; color: var(--fg); }
+  .dl .arch { color: var(--muted); font-size: 12.5px; }
+  .dl .size { color: var(--dim); font-size: 12px; margin-top: 4px; }
+  .dl .btn { margin-top: 10px; display: block; text-align: center; }
+  .dl .you { position: absolute; top: 10px; right: 12px; color: var(--or); font-size: 11px; letter-spacing: .08em; }
+
+  .feat { padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg2); }
+  .feat .em { font-size: 20px; }
+  .feat .nm { font-weight: 700; margin-top: 4px; color: var(--fg); }
+  .feat .ds { color: var(--muted); font-size: 12.5px; margin-top: 4px; line-height: 1.5; }
+
+  .steps { display: grid; gap: 6px; }
+  .srow { display: grid; grid-template-columns: 46px 1fr; gap: 12px; align-items: baseline; padding: 8px 12px; border: 1px solid var(--line); border-radius: 3px; background: #000; }
+  .srow .ic { font-weight: 700; color: var(--or); }
+  .srow .t { font-weight: 700; color: var(--fg); } .srow .s { color: var(--muted); font-size: 12.5px; }
+
+  .cmd { display: flex; align-items: center; gap: 10px; background: #000; border: 1px solid var(--line); border-radius: 3px; padding: 7px 10px; font-size: 13px; margin: 6px 0; }
+  .cmd code { flex: 1; white-space: pre-wrap; word-break: break-all; color: var(--fg); }
+  .cmd code::before { content: "$ "; color: var(--or); }
+  .cmd .k { color: var(--dim); font-size: 12px; min-width: 120px; }
+
+  .tag { font-size: 12px; padding: 1px 7px; border: 1px solid var(--line); color: var(--muted); border-radius: 2px; }
+  .tag.ok { color: var(--fg); border-color: var(--or-dim); }
+  details { margin: 6px 0; } details summary { cursor: pointer; color: var(--or3); font-weight: 700; } details summary::marker { color: var(--or); }
+  details p { color: var(--muted); margin: 6px 0 10px 18px; }
+  .muted { color: var(--muted); } .dim { color: var(--dim); } .small { font-size: 12.5px; }
+  footer { margin-top: 36px; color: var(--dim); font-size: 12px; text-align: center; border-top: 1px dashed var(--line2); padding-top: 14px; }
+  footer a { color: var(--or3); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hello">
+    <div><span class="spark">✻</span> <span class="t">Welcome to pa-pack!</span> <span class="ver" id="ver">latest</span></div>
+    <div class="s">&nbsp;&nbsp;A personal assistant for Claude Code, installed into one folder. Nothing global.</div>
+    <div class="banner-art">██████╗  █████╗       ██████╗  █████╗  ██████╗██╗  ██╗
+██╔══██╗██╔══██╗      ██╔══██╗██╔══██╗██╔════╝██║ ██╔╝
+██████╔╝███████║█████╗██████╔╝███████║██║     █████╔╝
+██╔═══╝ ██╔══██║╚════╝██╔═══╝ ██╔══██║██║     ██╔═██╗
+██║     ██║  ██║      ██║     ██║  ██║╚██████╗██║  ██╗
+╚═╝     ╚═╝  ╚═╝      ╚═╝     ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝</div>
+    <div class="s cursor">&nbsp;&nbsp;/install</div>
+    <pre class="mascot" aria-hidden="true">       .----------.
+       |          |        |||
+      [|  <span class="eye">[]</span>  <span class="eye">[]</span>  |]      \ |||
+       |   \__/   |       \__/
+       '----------'         |
+           |__|            /
+        .--'  '--.        /
+       / |      | \______/
+      /  |      |</pre>
+  </div>
+
+  <p class="lead">You already have Claude Code. pa-pack gives it a job: reading your mail, calendar, Slack and Jira, keeping follow-ups, sending you a morning brief and an update every hour or two, answering on <span class="hi">Telegram</span> from your phone, remembering what matters. It lives in one folder you pick, runs in the background from a tray icon, and never touches anything outside the folders you allow.</p>
+
+  <h2>Download</h2>
+  <p class="lead">One file, no installer wizard of the OS kind: run it and a local page opens in your browser. It brings the rest (Claude Code, Bun, Git Bash, tmux) if missing.</p>
+  <div class="grid g4" id="downloads">
+    <div class="dl" data-os="windows"><div class="os">Windows</div><div class="arch">x64 · .exe</div><div class="size" data-asset="pa-installer-x86_64-pc-windows-msvc.exe">&nbsp;</div><a class="btn primary" href="https://github.com/djtoon/claude-pa/releases/latest/download/pa-installer-x86_64-pc-windows-msvc.exe">Download</a></div>
+    <div class="dl" data-os="mac-arm"><div class="os">macOS</div><div class="arch">Apple Silicon (M1 and later)</div><div class="size" data-asset="pa-installer-aarch64-apple-darwin">&nbsp;</div><a class="btn primary" href="https://github.com/djtoon/claude-pa/releases/latest/download/pa-installer-aarch64-apple-darwin">Download</a></div>
+    <div class="dl" data-os="mac-intel"><div class="os">macOS</div><div class="arch">Intel</div><div class="size" data-asset="pa-installer-x86_64-apple-darwin">&nbsp;</div><a class="btn primary" href="https://github.com/djtoon/claude-pa/releases/latest/download/pa-installer-x86_64-apple-darwin">Download</a></div>
+    <div class="dl" data-os="linux"><div class="os">Linux</div><div class="arch">x64 · glibc</div><div class="size" data-asset="pa-installer-x86_64-unknown-linux-gnu">&nbsp;</div><a class="btn primary" href="https://github.com/djtoon/claude-pa/releases/latest/download/pa-installer-x86_64-unknown-linux-gnu">Download</a></div>
+  </div>
+  <div class="small dim" style="margin-top:8px">All builds: <a href="https://github.com/djtoon/claude-pa/releases">releases page</a> (built by GitHub Actions from the tagged source). <span id="relnote"></span></div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Then run it</h3>
+    <div class="cmd"><span class="k">Windows</span><code>double-click pa-installer-x86_64-pc-windows-msvc.exe   (SmartScreen: More info → Run anyway; it is unsigned)</code></div>
+    <div class="cmd"><span class="k">macOS</span><code>chmod +x pa-installer-*-apple-darwin &amp;&amp; xattr -d com.apple.quarantine pa-installer-*-apple-darwin &amp;&amp; ./pa-installer-*-apple-darwin</code></div>
+    <div class="cmd"><span class="k">Linux</span><code>chmod +x pa-installer-x86_64-unknown-linux-gnu &amp;&amp; ./pa-installer-x86_64-unknown-linux-gnu</code></div>
+    <div class="small muted" style="margin-top:6px">The installer serves its wizard on 127.0.0.1 only, with a random token in the URL it prints. Nothing is sent anywhere except the Telegram token to api.telegram.org, if you set one.</div>
+  </div>
+
+  <h2>What you get</h2>
+  <div class="grid g3">
+    <div class="feat"><div class="em">🎭</div><div class="nm">A personality</div><div class="ds">Serious, Fun, Weird, Warm, Sarcastic, Zen, Hype, or your own words. It shows in every message, Telegram included. Facts stay exact.</div></div>
+    <div class="feat"><div class="em">📱</div><div class="nm">Your phone</div><div class="ds">A Telegram bot of your own (BotFather, one minute). The installer verifies the token and allowlists you: no pairing codes. Talk to it, get pushes.</div></div>
+    <div class="feat"><div class="em">📡</div><div class="nm">Proactive loop</div><div class="ds">Every 15 min to 4 h on workdays it reads its memory and follow-ups, checks mail, calendar, Slack and Jira, and messages you only when something needs you (or always, your call). Morning brief and end-of-day too.</div></div>
+    <div class="feat"><div class="em">🟠</div><div class="nm">Tray app</div><div class="ds">An orange dot keeps the session running in the background, restarts it if it dies, starts at login, and continues the same conversation. One instance, one session.</div></div>
+    <div class="feat"><div class="em">🔒</div><div class="nm">Folder guard</div><div class="ds">Allow everything (no prompts, default) or ask first; either way a hook blocks any file or shell command outside the folders you allow, and keys and credentials are never touched. OS sandbox on macOS and Linux.</div></div>
+    <div class="feat"><div class="em">🔌</div><div class="nm">Your services</div><div class="ds">Gmail, Calendar, Drive, Slack via claude.ai connectors, Jira via Atlassian. Authorize each one from the installer's Done page, one click apiece.</div></div>
+  </div>
+
+  <h2>Six steps, five minutes</h2>
+  <div class="steps">
+    <div class="srow"><div class="ic">[1]</div><div><div class="t">Personality</div><div class="s">Pick how it talks. Name it. Your sign-off for drafts.</div></div></div>
+    <div class="srow"><div class="ic">[2]</div><div><div class="t">Folder</div><div class="s">Everything goes into one folder: its memory, its rules, two launchers. Pick an empty one.</div></div></div>
+    <div class="srow"><div class="ic">[3]</div><div><div class="t">Permissions</div><div class="s">Allow everything (recommended for a bot that answers from your phone) or ask first. Allowed folders, never-touched paths, folder guard, OS sandbox.</div></div></div>
+    <div class="srow"><div class="ic">[4]</div><div><div class="t">Phone</div><div class="s">Paste the Telegram token, send the bot a message, the wizard notices you. Choose how often the proactive loop runs. Skippable.</div></div></div>
+    <div class="srow"><div class="ic">[5]</div><div><div class="t">Review</div><div class="s">A plain summary of what will be written and done. Nothing happens before you click Install.</div></div></div>
+    <div class="srow"><div class="ic">[6]</div><div><div class="t">Done</div><div class="s">What is in your folder, the Telegram status, services to authorize, a health check. Start the tray app, message the bot.</div></div></div>
+  </div>
+
+  <h2>What ends up where</h2>
+  <div class="card">
+    <h3>Your folder</h3>
+    <div class="cmd"><span class="k">pa-tray</span><code>start the assistant in the background (tray icon); starts at login</code></div>
+    <div class="cmd"><span class="k">pa</span><code>open it in a terminal with the phone channel, continuing the last conversation</code></div>
+    <div class="cmd"><span class="k">CLAUDE.md</span><code>who it is: the personality and the assistant rules</code></div>
+    <div class="cmd"><span class="k">.pa/</span><code>preferences.md (your rules), memory.md, followups.json, schedule.txt, allowed-folders.txt, logs</code></div>
+    <div class="cmd"><span class="k">.claude/</span><code>the skills, agents, hooks and settings Claude Code reads in this folder</code></div>
+    <div class="small muted" style="margin-top:6px">Outside the folder: one line in <span class="hi">~/.claude.json</span> that marks it trusted, the Telegram plugin's own state dir, and the scheduled jobs (Task Scheduler, launchd or cron). <span class="hi">Uninstall</span> on the Done page removes all of it.</div>
+  </div>
+
+  <h2>Questions</h2>
+  <details><summary>Does the bot need Claude Code open?</summary><p>Yes: the bot lives inside a running Claude Code session. That is what the tray app keeps alive (and restarts). Messages you send while it is off wait in Telegram for up to a day and arrive when it is back. Scheduled pushes (brief, radar) do not need a session.</p></details>
+  <details><summary>Why "allow everything"? Is that safe?</summary><p>A background session cannot stop to ask you; every prompt would go to your phone. So inside the folder it does not ask. It still confirms in chat before sending mail, posting or creating events (that is in its rules), and the folder guard blocks file and shell access outside the folders you allowed, plus keys and credentials anywhere. Pick "Ask me first" if you prefer prompts.</p></details>
+  <details><summary>Windows: is there a sandbox?</summary><p>Claude Code's OS sandbox exists on macOS and Linux only; the installer enables it there. On Windows the folder guard hook is the fence: it checks every file and shell command before it runs.</p></details>
+  <details><summary>Gmail, Calendar, Slack: how do they connect?</summary><p>They are claude.ai connectors (claude.ai → Settings → Connectors). Each needs a one-time authorization on your machine; the Done page has an [ authorize ] button per service that opens the approval page. Jira/Confluence use the Atlassian MCP server with its own OAuth.</p></details>
+  <details><summary>Can I run more than one assistant?</summary><p>One tray per folder and one phone session per machine (two sessions would fight over the same bot). Several folders with different bots work; start them one at a time.</p></details>
+  <details><summary>How do I remove it?</summary><p>Done page → Uninstall: stops the sessions and removes the scheduled jobs, login autostart, plugin scope, trust entry and launchers. "Purge" also deletes .pa and .claude. Or <span class="hi">pa-installer uninstall &lt;folder&gt; [--purge]</span>.</p></details>
+
+  <h2>Build it yourself</h2>
+  <div class="cmd"><span class="k">clone</span><code>git clone https://github.com/djtoon/claude-pa.git &amp;&amp; cd claude-pa</code></div>
+  <div class="cmd"><span class="k">build</span><code>./build.sh        # pa-tray first, then the installer (which embeds it)</code></div>
+  <div class="small muted">Rust, four small crates. Every tag <span class="hi">v*</span> is built for all four targets by GitHub Actions and attached to a release.</div>
+
+  <footer>
+    <a href="https://github.com/djtoon/claude-pa">github.com/djtoon/claude-pa</a> · <a href="https://github.com/djtoon/claude-pa/releases">releases</a> · <a href="https://github.com/djtoon/claude-pa/blob/main/installer/README.md">installer docs</a> · MIT
+    <div style="margin-top:6px">pa-pack · black, orange, white · built on Claude Code</div>
+  </footer>
+</div>
+
+<script>
+// Highlight the visitor's platform and show the latest release's version, date and asset sizes.
+(function () {
+  const ua = navigator.userAgent, plat = (navigator.platform || '').toLowerCase();
+  let mine = null;
+  if (/Windows/i.test(ua)) mine = 'windows';
+  else if (/Mac/i.test(ua)) mine = (/arm|aarch64/i.test(ua) || (navigator.userAgentData && navigator.userAgentData.platform === 'macOS' && /arm/i.test(plat))) ? 'mac-arm' : 'mac-arm';
+  else if (/Linux/i.test(ua)) mine = 'linux';
+  if (mine) {
+    const el = document.querySelector(`.dl[data-os="${mine}"]`);
+    if (el) { el.classList.add('mine'); el.insertAdjacentHTML('afterbegin', '<span class="you">YOUR SYSTEM</span>'); }
+    if (mine === 'mac-arm') {
+      const intel = document.querySelector('.dl[data-os="mac-intel"]');
+      if (intel) intel.querySelector('.arch').textContent += '  (older Macs)';
+    }
+  }
+  fetch('https://api.github.com/repos/djtoon/claude-pa/releases/latest').then(r => r.json()).then(rel => {
+    if (!rel || !rel.tag_name) return;
+    document.getElementById('ver').textContent = rel.tag_name;
+    const d = rel.published_at ? new Date(rel.published_at).toISOString().slice(0, 10) : '';
+    document.getElementById('relnote').textContent = `Latest: ${rel.tag_name}${d ? ' · ' + d : ''}.`;
+    for (const a of rel.assets || []) {
+      const el = document.querySelector(`.size[data-asset="${a.name}"]`);
+      if (el) el.textContent = (a.size / 1048576).toFixed(1) + ' MB';
+    }
+  }).catch(() => {});
+})();
+</script>
+</body>
+</html>
