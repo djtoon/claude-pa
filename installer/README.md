@@ -63,6 +63,26 @@ shims cannot be spawned that way and the server dies with "Connection closed". T
 real `bun.exe` / `bun` binary (official installer, `~/.bun/bin`) and every launcher puts `~/.bun/bin` and
 `~/.local/bin` first on PATH.
 
+## Reliability (a bot you talk to once a day)
+
+- The tray app is a watchdog: it clears Claude Code's 15-minute "recent failure" cache for the Telegram server
+  before every start (`~/.claude/mcp-needs-auth-cache.json`), watches the Telegram MCP log for
+  "Channel notifications registered", and restarts the session with backoff (10s → 5 min) if the channel did
+  not come up or the session exited. The `pa` / `pa-up` launchers clear that cache too.
+- Every launcher and the tray start with `-c`, so closing and reopening continues the same conversation.
+- The Telegram reply / react / edit tools are pre-approved in `.claude/settings.json`; a hidden session must
+  never wait on a permission prompt for its own replies. Other tools ask, and the Telegram plugin relays the
+  question to your phone (approve with the code it sends).
+- Messages sent while the assistant is down wait in Telegram's queue (24 h) and are delivered on the next start.
+- Optional, no prompts at all: `python3 tools/enable-no-prompt-mode.py && ./build.sh` switches the phone
+  session to `bypassPermissions` inside the folder (connectors allowed, credentials folders and destructive
+  commands denied, bypass acknowledgement recorded). The pa charter still confirms sends/posts in chat.
+
+## Personality in every message
+
+The CLAUDE.md block says the personality applies to every message (Telegram replies included) and each
+personality carries concrete habits (openers, sign-offs, emoji rules). The session hook repeats it at start.
+
 ## Clean machine
 
 With "Install what is missing" on (default), the installer brings the prerequisites itself, using the official

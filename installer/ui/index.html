@@ -223,7 +223,7 @@
   <!-- 1 PERSONA -->
   <section class="step active" data-step="0">
     <h2>Pick a personality</h2>
-    <p class="lead">How it talks to you. The rules (confirm before sending, phone-sized replies, follow-ups) are the same for all of them; this is tone. It becomes the identity paragraph in <span class="hi">CLAUDE.md</span> and a few lines in <span class="hi">.pa/preferences.md</span>. You can rewrite both later.</p>
+    <p class="lead">How it talks to you, in every message. The rules are the same for all of them (it always asks before sending anything to other people). You can change this later in <span class="hi">CLAUDE.md</span>.</p>
     <div class="grid g3" id="personas"></div>
     <div class="card" id="customBox" style="margin-top:14px" hidden>
       <h3>Custom identity</h3>
@@ -249,7 +249,7 @@
   <!-- 2 FOLDER -->
   <section class="step" data-step="1">
     <h2>Where should it live?</h2>
-    <p class="lead">Pick the project folder. The installer writes <span class="hi">.claude/</span> (skills, agents, hooks, settings), <span class="hi">.pa/</span> (state, scripts, Telegram state), <span class="hi">CLAUDE.md</span>, <span class="hi">.mcp.json</span> and the <span class="hi">pa</span> launchers inside it. Your global <span class="hi">~/.claude</span> is untouched, except one line that marks this folder trusted.</p>
+    <p class="lead">Everything the assistant needs goes into this one folder: its memory, its rules and two launchers (<span class="hi">pa-tray</span>, <span class="hi">pa</span>). Pick an empty folder or make a new one.</p>
     <div class="card">
       <h3>Target</h3>
       <label class="f">Target folder</label>
@@ -283,7 +283,7 @@
   <!-- 3 SETUP -->
   <section class="step" data-step="2">
     <h2>Phone (optional)</h2>
-    <p class="lead">Chat with the assistant from Telegram and get the morning brief on your phone. Skip it if you want; you can come back later.</p>
+    <p class="lead">Talk to the assistant from Telegram and get the morning brief on your phone. Optional; skip it and add it later from the last page.</p>
     <div id="envBanner"></div>
     <div class="card">
       <h3>Phone: Telegram</h3>
@@ -307,7 +307,7 @@
     </div>
 
     <details class="adv">
-      <summary>Advanced: your day, skills, wiring, automation (defaults are fine)</summary>
+      <summary>More settings (the defaults are fine)</summary>
     <div class="card" style="margin-top:12px">
       <h3>Your day</h3>
       <div class="grid g3">
@@ -339,7 +339,7 @@
   <!-- 4 REVIEW -->
   <section class="step" data-step="3">
     <h2>Ready to install</h2>
-    <p class="lead">Nothing has been written yet. Here is what will happen in <span class="hi" id="reviewTarget"></span>.</p>
+    <p class="lead">Nothing is written yet. This is what will happen in <span class="hi" id="reviewTarget"></span>.</p>
     <div id="reviewBanner"></div>
     <div class="card"><h3>Summary</h3><div id="reviewSummary" class="muted">planning…</div></div>
     <details class="adv"><summary>Show every file and step</summary>
@@ -353,58 +353,68 @@
   <section class="step" data-step="4">
     <div class="done-hero"><div class="big" id="doneEmoji">✻</div><div><h2 id="doneTitle">Installed</h2><p class="lead" style="margin:0" id="doneLead"></p></div></div>
     <div class="counts" id="doneCounts"></div>
-    <details class="card" style="margin-bottom:14px"><summary>What was written and done</summary><div class="plan" id="donePlan" style="margin-top:10px"></div></details>
 
     <div class="card">
-      <h3>Status</h3>
-      <div class="row" style="justify-content:flex-end; margin-bottom:8px"><button class="btn small" onclick="refreshStatus()">↻ refresh</button></div>
-      <div class="board" id="board"><div class="srow"><span class="spinner"></span><span class="muted">checking…</span><span></span></div></div>
+      <h3>1 · What is now in your folder</h3>
+      <div class="board" id="appsBoard"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn primary" onclick="runAction('tray')">Start the tray app now</button>
+        <button class="btn" onclick="runAction('open')">Open the folder</button>
+      </div>
     </div>
 
     <div class="card">
-      <h3>Services (claude.ai connectors)</h3>
-      <div class="small muted">Gmail, Calendar, Drive and Slack come from your claude.ai account (claude.ai → Settings → Connectors). Click <span class="hi">[ authorize ]</span> on a service: connectors open their approval page on claude.ai (counts from the next Claude session), other MCP servers run their OAuth in your browser. One at a time, only what you want.</div>
+      <h3>2 · Phone (Telegram)</h3>
+      <div class="board" id="tgBoard"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" onclick="runAction('notify')">Send a test message to my phone</button>
+        <button class="btn" onclick="runAction('detect')">Detect me on Telegram</button>
+      </div>
+      <div class="small muted" style="margin-top:8px">Then write to your bot in Telegram. It answers while the tray app is running (or a <span class="hi">pa</span> window is open). Messages you send while it is off wait for it.</div>
+    </div>
+
+    <div class="card">
+      <h3>3 · Connect your services</h3>
+      <div class="small muted">Click <span class="hi">[ authorize ]</span> next to a service, approve it in the browser, done. One at a time, only the ones you want. Gmail, Calendar, Drive and Slack come from your claude.ai account.</div>
       <div class="svc" id="services"><span><span class="spinner"></span> checking…</span></div>
       <div class="row" style="margin-top:10px">
-        <button class="btn" onclick="runAction('terminal')">Open Claude here</button>
-        <button class="btn small ghost" onclick="checkServices()">↻ re-check services</button>
+        <button class="btn small ghost" onclick="checkServices()">↻ re-check</button>
+        <button class="btn small ghost" onclick="runAction('terminal')">open Claude in a terminal</button>
       </div>
     </div>
 
-    <div class="card">
-      <h3>Try it</h3>
-      <div class="small muted" style="margin-bottom:10px">The Telegram bot answers only while a phone session is running. The tray app keeps one running in the background (orange dot in the tray; the login autostart uses it). Scheduled pushes do not need it.</div>
-      <div class="row">
-        <button class="btn primary" onclick="runAction('tray')">Start the tray app</button>
-        <button class="btn" onclick="runAction('up')">Start a console session</button>
+    <details class="adv"><summary>Health check (everything the installer set up)</summary>
+      <div class="row" style="justify-content:flex-end; margin:8px 0"><button class="btn small" onclick="refreshStatus()">↻ refresh</button></div>
+      <div class="board" id="board"><div class="srow"><span class="spinner"></span><span class="muted">checking…</span><span></span></div></div>
+    </details>
+
+    <details class="adv"><summary>More: morning brief, schedule, console session, manual commands</summary>
+      <div class="row" style="margin:10px 0">
         <button class="btn" onclick="runJob('brief')">Run the morning brief now</button>
-        <button class="btn" onclick="runAction('notify')">Test Telegram push</button>
+        <button class="btn" onclick="runAction('up')">Start a console session</button>
         <button class="btn" onclick="runAction('hook')">Test session hook</button>
-        <button class="btn" onclick="runAction('open')">Open folder</button>
       </div>
-      <div class="out" id="actionOut" hidden></div>
-    </div>
-
-    <div class="card">
-      <h3>Schedule</h3>
       <div class="row">
-        <button class="btn small" onclick="runAction('schedule-status')">show installed jobs</button>
-        <button class="btn small" onclick="runAction('schedule-dry')">preview</button>
-        <button class="btn small" onclick="runAction('schedule')">install / refresh</button>
-        <button class="btn small ghost" onclick="runAction('schedule-remove')">remove</button>
+        <button class="btn small" onclick="runAction('schedule-status')">show scheduled jobs</button>
+        <button class="btn small" onclick="runAction('schedule-dry')">preview schedule</button>
+        <button class="btn small" onclick="runAction('schedule')">install / refresh schedule</button>
+        <button class="btn small ghost" onclick="runAction('schedule-remove')">remove schedule</button>
       </div>
-      <div class="small dim" style="margin-top:8px">Edit <span class="hi">.pa/schedule.txt</span> then "install / refresh". Jobs run only while you are logged in and the machine is awake.</div>
-    </div>
+      <div class="small dim" style="margin:8px 0">Edit <span class="hi">.pa/schedule.txt</span> then "install / refresh schedule". Jobs run only while you are logged in and the machine is awake.</div>
+      <div id="nextSteps"></div>
+    </details>
 
-    <details class="card" style="margin-top:14px"><summary>Manual commands (if you prefer the terminal)</summary><div id="nextSteps" style="margin-top:10px"></div></details>
-
-    <details class="adv" style="margin-top:14px"><summary>Uninstall</summary>
+    <details class="adv"><summary>Uninstall</summary>
       <div class="small muted" style="margin:8px 0">Stops the sessions and removes the scheduled jobs, login autostart, plugin scope, trust entry, plugin-dir Telegram state and the launchers. "Purge" also deletes <span class="hi">.pa/</span> and <span class="hi">.claude/</span> and the CLAUDE.md block, so the folder is back to how it was.</div>
       <div class="row">
         <button class="btn small" id="unBtn" onclick="uninstallFlow(false)">Uninstall (keep my files)</button>
         <button class="btn small ghost" id="unPurgeBtn" onclick="uninstallFlow(true)">Uninstall + purge</button>
       </div>
     </details>
+
+    <div class="out" id="actionOut" hidden></div>
+    <details class="card" style="margin-top:14px"><summary>What was written and done</summary><div class="plan" id="donePlan" style="margin-top:10px"></div></details>
+
     <div class="nav"><button class="btn ghost" onclick="go(2)">← change settings and reinstall</button><button class="btn" onclick="quit()">Close installer</button></div>
   </section>
 
@@ -746,10 +756,31 @@ function srow(ok, title, sub, action, cls) {
   return `<div class="srow ${st}"><div class="ic">${ic}</div><div><div class="t">${title}</div><div class="s">${sub}</div></div><div>${action || ''}</div></div>`;
 }
 const act = (what, label, extra) => `<button class="btn small" onclick="runAction('${what}')">${esc(label)}</button>${extra || ''}`;
+function appRow(ok, file, what, extra) {
+  return `<div class="srow ${ok ? 'ok' : 'info'}"><div class="ic">${ok ? '[FILE]' : '[ -- ]'}</div><div><div class="t">${esc(file)}</div><div class="s">${what}</div></div><div>${extra || ''}</div></div>`;
+}
 async function refreshStatus() {
   const board = $('board');
   try {
     const s = await api('/api/status?target=' + encodeURIComponent(targetEl.value.trim()));
+    const win = info.os === 'windows';
+    const apps = [];
+    apps.push(appRow(s.tray, win ? 'pa-tray.cmd' : 'pa-tray', 'Double-click to start the assistant in the background. An orange dot appears in the ' + (win ? 'system tray' : 'menu bar') + '; right-click it to show, stop or quit. Starts by itself at login.'));
+    apps.push(appRow(s.launcher, win ? 'pa.cmd' : 'pa', 'Opens the assistant in a terminal, with the phone channel, continuing your last conversation.'));
+    if (win) apps.push(appRow(s.launcher, 'claude.cmd', 'Makes plain <span class="hi">claude</span> typed in this folder include the phone channel.'));
+    apps.push(appRow(s.installed, '.pa\\', 'Its memory: preferences.md (your rules), memory.md, followups.json, logs.'));
+    apps.push(appRow(s.claude_md, 'CLAUDE.md', 'Who it is: the personality you picked and the assistant rules.'));
+    $('appsBoard').innerHTML = apps.join('');
+
+    const tg = [];
+    const detectBtn = s.telegram_token ? act('detect', 'Detect me now') : `<button class="btn small" onclick="go(2)">Add token</button>`;
+    tg.push(srow(s.telegram_token, 'Bot token', s.telegram_token ? 'saved' : 'none yet: add it in step 3 (Phone) and reinstall', s.telegram_token ? '' : `<button class="btn small" onclick="go(2)">Add</button>`));
+    if (s.telegram_token) tg.push(srow(s.telegram_global, 'Bot config where Claude reads it', s.telegram_global ? 'in place' : 'missing: click Sync', s.telegram_global ? '' : act('sync-telegram', 'Sync')));
+    tg.push(srow(s.telegram_users > 0, 'You are allowed to talk to it', s.telegram_users > 0 ? `yes (${s.telegram_users} user${s.telegram_users > 1 ? 's' : ''})` : 'not yet: send the bot any message, then click Detect me', s.telegram_users > 0 ? '' : detectBtn, s.telegram_users > 0 ? 'ok' : 'bad'));
+    tg.push(srow(s.chat_id, 'Pushes to your phone', s.chat_id ? 'on (morning brief, radar, end of day)' : 'off until you are detected', s.chat_id ? '' : '', s.chat_id ? 'ok' : 'info'));
+    tg.push(srow(s.plugin && !!s.bun, 'Telegram engine', (s.plugin ? 'plugin installed' : 'plugin missing') + ', ' + (s.bun ? 'runtime ok' : 'runtime missing'), (s.plugin && s.bun) ? '' : (s.plugin ? act('bun', 'Install runtime') : act('plugins', 'Install plugin'))));
+    $('tgBoard').innerHTML = tg.join('');
+
     const rows = [];
     rows.push(srow(s.installed, 'Files', s.installed ? `${s.skills} skills, hooks ${s.hooks ? 'on' : 'missing'}, CLAUDE.md ${s.claude_md ? 'has the pa block' : 'missing the pa block'}` : 'not installed', ''));
     rows.push(srow(!!s.claude, 'Claude Code CLI', s.claude ? esc(s.claude) : 'not installed', s.claude ? '' : act('install-claude', 'Install Claude Code'), s.claude ? 'ok' : 'err'));
@@ -759,13 +790,6 @@ async function refreshStatus() {
     rows.push(srow(s.trusted, 'Workspace trusted', s.trusted ? 'no trust dialog, .pa/ permission rules active' : 'Claude Code will ask on first start and ignore the .pa/ rules until then', s.trusted ? '' : act('trust', 'Trust now')));
     rows.push(srow(s.plugin, 'Telegram channel plugin', s.plugin ? 'enabled for this project' : (s.marketplace ? 'marketplace registered, plugin not installed' : 'not installed'), s.plugin ? '' : act('plugins', 'Install')));
     rows.push(srow(!!s.bun, 'Bun runtime', s.bun ? esc(s.bun) : 'missing: the Telegram server needs the real bun.exe (an npm shim is not enough)', s.bun ? '' : act('bun', 'Install Bun')));
-    rows.push(srow(s.telegram_token, 'Telegram bot token', s.telegram_token ? '.pa/telegram/.env' : 'none: paste it in Setup, or run /telegram:configure <token> inside claude', s.telegram_token ? '' : `<button class="btn small" onclick="go(2)">Setup</button>`));
-    const detectBtn = s.telegram_token ? act('detect', 'Detect me now') : `<button class="btn small" onclick="go(2)">Setup</button>`;
-    if (s.telegram_token) rows.push(srow(s.telegram_global, 'Telegram plugin dir', s.telegram_global ? `token + allowlist mirrored to ${esc(s.telegram_global_dir)} (what the plugin reads)` : 'token not in the plugin dir yet: the bot cannot start', s.telegram_global ? '' : act('sync-telegram', 'Sync now')));
-    rows.push(srow(s.telegram_users > 0, 'Telegram access', s.telegram_users > 0 ? `${s.telegram_users} allowlisted, policy ${esc(s.telegram_policy)}` : `policy ${esc(s.telegram_policy)}: send the bot one message, then click Detect me now (no pairing code)`, s.telegram_users > 0 ? '' : detectBtn, s.telegram_users > 0 ? 'ok' : 'bad'));
-    rows.push(srow(s.chat_id, 'Push chat id', s.chat_id ? 'scheduled jobs will push to your phone' : 'not set: jobs print instead of pushing', s.chat_id ? '' : detectBtn, s.chat_id ? 'ok' : 'info'));
-    rows.push(srow(s.tray, 'Tray app', s.tray ? 'installed: .pa/bin/pa-tray keeps the phone session running in the background' : 'not in this installer build', s.tray ? act('tray', 'Start') : '', s.tray ? 'ok' : 'info'));
-    rows.push(srow(s.launcher, 'Phone launcher', s.launcher ? `start the assistant with <span class="hi">${info.os === 'windows' ? 'pa' : './pa'}</span> in the folder (adds --channels; plain claude has no Telegram)` : 'missing: reinstall with scripts on', ''));
     rows.push(srow(s.schedule, 'Proactive schedule', s.schedule ? 'installed' + (s.autostart ? ', phone session starts at login' : '') : 'not installed', s.schedule ? '' : act('schedule', 'Install')));
     board.innerHTML = rows.join('');
   } catch (e) { board.innerHTML = `<div class="srow err"><div class="ic">[FAIL]</div><div>${esc(e.message)}</div><div></div></div>`; }

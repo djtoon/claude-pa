@@ -101,7 +101,8 @@ const MARK_START: &str = "<!-- pa-pack -->";
 const MARK_END: &str = "<!-- /pa-pack -->";
 const HOOK_SESSION_START: &str = r#"bash "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh""#;
 const HOOK_NOTIFY: &str = r#"bash "$CLAUDE_PROJECT_DIR/.claude/hooks/notify-phone.sh""#;
-const PERMISSIONS: &[&str] = &["Read(./.pa/**)", "Edit(./.pa/**)", "Write(./.pa/**)"];
+// The Telegram reply/react/edit tools must never wait for a permission prompt: the phone session is hidden.
+const PERMISSIONS: &[&str] = &["Read(./.pa/**)", "Edit(./.pa/**)", "Write(./.pa/**)", "mcp__plugin_telegram_telegram", "mcp__plugin_telegram_telegram__reply", "mcp__plugin_telegram_telegram__react", "mcp__plugin_telegram_telegram__edit_message"];
 const AUTOSTART_LINE: &str = "session       @login                        pa-up.sh";
 
 fn norm(s: &str) -> String {
@@ -647,6 +648,10 @@ pub fn run(o: &Options) -> Report {
                     Ok(msg) => f.label("telegram (plugin dir)", if msg.starts_with("already") { "same" } else { "ok" }, msg),
                     Err(err) => f.label("telegram (plugin dir)", "error", err),
                 }
+                // A previous failed attempt is remembered for 15 minutes; forget it so the first session connects.
+                if provision::clear_mcp_failure_cache(provision::TELEGRAM_MCP_SERVER).unwrap_or(false) {
+                    f.label("telegram retry", "ok", "cleared Claude's cached failure for the Telegram server");
+                }
             }
         }
     }
@@ -705,6 +710,7 @@ pub fn apply_telegram_user(path: &str, user_id: &str, chat_id: &str) -> Result<S
     let env = merge_env(read_opt(&env_path), &[("TELEGRAM_CHAT_ID", chat_id)]);
     fs::write(&env_path, env).map_err(|e| e.to_string())?;
     let synced = provision::sync_telegram_state(&root).unwrap_or_else(|e| format!("plugin dir not synced: {e}"));
+    let _ = provision::clear_mcp_failure_cache(provision::TELEGRAM_MCP_SERVER);
     Ok(format!("user {user_id} allowlisted (policy allowlist), chat id {chat_id} saved for pushes; {synced}"))
 }
 

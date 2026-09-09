@@ -195,6 +195,23 @@ pub fn set_trust(root: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Claude Code shows a one-time "bypass permissions" acknowledgement dialog; a hidden phone session would
+/// hang on it. Record the acknowledgement the way the dialog does. Returns whether anything changed.
+pub fn accept_bypass_mode() -> Result<bool, String> {
+    let mut v = read_claude_json()?;
+    let obj = v.as_object_mut().ok_or("~/.claude.json is not an object")?;
+    if obj.get("bypassPermissionsModeAccepted").and_then(|b| b.as_bool()) == Some(true) {
+        return Ok(false);
+    }
+    obj.insert("bypassPermissionsModeAccepted".into(), json!(true));
+    let text = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?;
+    let p = claude_json_path();
+    let tmp = p.with_extension("json.pa-tmp");
+    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &p).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 // ---------- marketplace + plugins ----------
 
 pub fn marketplace_known(name: &str) -> bool {
@@ -347,6 +364,25 @@ pub fn sync_telegram_state(root: &Path) -> Result<String, String> {
     }
     Ok(if notes.is_empty() { "already in sync".into() } else { format!("synced {} to {}", notes.join(" + "), dst.display()) })
 }
+
+// ---------- MCP failure cache ----------
+
+/// Claude Code remembers a failed MCP connection in ~/.claude/mcp-needs-auth-cache.json and skips that server
+/// for 15 minutes ("recent failure cached"). After we fix the cause, drop the entry so the next session retries.
+pub fn clear_mcp_failure_cache(server: &str) -> Result<bool, String> {
+    let cfg = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| home_dir().join(".claude"));
+    let p = cfg.join("mcp-needs-auth-cache.json");
+    let Ok(text) = std::fs::read_to_string(&p) else { return Ok(false) };
+    let mut v: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let Some(obj) = v.as_object_mut() else { return Ok(false) };
+    if obj.remove(server).is_none() {
+        return Ok(false);
+    }
+    std::fs::write(&p, v.to_string()).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+pub const TELEGRAM_MCP_SERVER: &str = "plugin:telegram:telegram";
 
 // ---------- uninstall ----------
 

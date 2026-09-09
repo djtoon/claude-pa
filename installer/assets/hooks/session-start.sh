@@ -7,6 +7,7 @@ PA="$ROOT/.pa"
 TODAY=$(date +%F)
 echo "=== PA CONTEXT ($TODAY $(date +%H:%M)) ==="
 echo "State dir: .pa/ (project-local)"
+echo "Personality: the ## Persona section of CLAUDE.md applies to every message, including Telegram replies. Make it audible."
 if [ -f "$PA/telegram/.env" ] && grep -q '^TELEGRAM_BOT_TOKEN=.\{10,\}' "$PA/telegram/.env" 2>/dev/null; then
   echo "Phone channel: Telegram is configured for this folder. It is only live in sessions started with the channel flag:"
   echo "  ./pa  (or pa.cmd / claude.cmd from cmd.exe on Windows)  =  claude --channels plugin:telegram@claude-plugins-official"

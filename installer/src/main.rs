@@ -257,7 +257,10 @@ fn run_action(target: &str, what: &str, name: &str) -> Value {
             json!({ "ok": report.ok, "output": text })
         }
         "sync-telegram" => match provision::sync_telegram_state(&root) {
-            Ok(msg) => json!({ "ok": true, "output": msg }),
+            Ok(msg) => {
+                let cleared = provision::clear_mcp_failure_cache(provision::TELEGRAM_MCP_SERVER).unwrap_or(false);
+                json!({ "ok": true, "output": format!("{msg}{}", if cleared { "; cleared Claude's cached failure, restart the assistant" } else { "" }) })
+            }
             Err(e) => json!({ "ok": false, "output": e }),
         },
         "bun" => match provision::install_bun() {
